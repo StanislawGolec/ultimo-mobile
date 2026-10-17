@@ -9,4 +9,10 @@ sealed interface ConnectionStatus {
     data object Connected : ConnectionStatus
     data class Reconnecting(val attempt: Int, val nextRetrySeconds: Int) : ConnectionStatus
     data class Failed(val error: String) : ConnectionStatus
+
+    val isConnected: Boolean
+        get() = this is Connected
+
+    val isReconnecting: Boolean
+        get() = this is Reconnecting
 }
