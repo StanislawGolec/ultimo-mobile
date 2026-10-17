@@ -12,14 +12,24 @@ import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.rememberNavController
 import dagger.hilt.android.AndroidEntryPoint
-import pl.ultimo.mobile.feature.game.GameTableScreen
+import pl.ultimo.mobile.core.audio.SoundEffectsManager
+import pl.ultimo.mobile.core.haptic.HapticFeedbackManager
+import pl.ultimo.mobile.feature.game.GameRoute
 import pl.ultimo.mobile.feature.history.HistoryScreen
 import pl.ultimo.mobile.feature.lobby.LobbyScreen
 import pl.ultimo.mobile.ui.theme.BackgroundDark
 import pl.ultimo.mobile.ui.theme.UltimoTheme
+import javax.inject.Inject
 
 @AndroidEntryPoint
 class MainActivity : ComponentActivity() {
+
+    @Inject
+    lateinit var soundManager: SoundEffectsManager
+
+    @Inject
+    lateinit var hapticManager: HapticFeedbackManager
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
@@ -29,15 +39,26 @@ class MainActivity : ComponentActivity() {
                     modifier = Modifier.fillMaxSize(),
                     color = BackgroundDark
                 ) {
-                    UltimoAppNavHost()
+                    UltimoAppNavHost(
+                        soundManager = soundManager,
+                        hapticManager = hapticManager
+                    )
                 }
             }
         }
     }
+
+    override fun onDestroy() {
+        super.onDestroy()
+        soundManager.release()
+    }
 }
 
 @Composable
-fun UltimoAppNavHost() {
+fun UltimoAppNavHost(
+    soundManager: SoundEffectsManager,
+    hapticManager: HapticFeedbackManager
+) {
     val navController = rememberNavController()
 
     NavHost(
@@ -56,9 +77,11 @@ fun UltimoAppNavHost() {
         }
         composable("game/{roomId}") { backStackEntry ->
             val roomId = backStackEntry.arguments?.getString("roomId") ?: "default"
-            GameTableScreen(
+            GameRoute(
                 roomId = roomId,
-                onLeaveRoom = {
+                soundManager = soundManager,
+                hapticManager = hapticManager,
+                onNavigateBack = {
                     navController.popBackStack()
                 }
             )

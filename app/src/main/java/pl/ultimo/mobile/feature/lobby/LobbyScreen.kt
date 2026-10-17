@@ -1,6 +1,14 @@
 package pl.ultimo.mobile.feature.lobby
 
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -18,12 +26,13 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
-import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,25 +41,46 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
+import androidx.hilt.navigation.compose.hiltViewModel
 import pl.ultimo.mobile.core.network.ConnectionStatus
+import pl.ultimo.mobile.feature.lobby.dialog.ServerConfigDialog
+import pl.ultimo.mobile.ui.theme.AccentCyan
 import pl.ultimo.mobile.ui.theme.StatusConnected
 import pl.ultimo.mobile.ui.theme.StatusDisconnected
 import pl.ultimo.mobile.ui.theme.StatusReconnecting
 import pl.ultimo.mobile.ui.theme.SurfaceContainerDark
 import pl.ultimo.mobile.ui.theme.SurfaceDark
+import pl.ultimo.mobile.ui.theme.SurfaceElevatedDark
+import pl.ultimo.mobile.ui.theme.TextMuted
 import pl.ultimo.mobile.ui.theme.TextPrimary
 import pl.ultimo.mobile.ui.theme.TextSecondary
 import pl.ultimo.mobile.ui.theme.UltimoBlue
+import pl.ultimo.mobile.ui.theme.UltimoYellow
 
 @Composable
 fun LobbyScreen(
-    connectionStatus: ConnectionStatus = ConnectionStatus.Disconnected,
+    viewModel: LobbyViewModel = hiltViewModel(),
     onJoinMatch: (username: String, roomId: String) -> Unit = { _, _ -> },
     onNavigateToHistory: () -> Unit = {}
 ) {
-    var username by remember { mutableStateOf("Player_1") }
-    var roomId by remember { mutableStateOf("room_1") }
+    val uiState by viewModel.uiState.collectAsState()
+    var isConfigDialogOpen by remember { mutableStateOf(false) }
+
+    if (isConfigDialogOpen) {
+        ServerConfigDialog(
+            currentServerUrl = uiState.serverUrl,
+            useChaosProxy = uiState.useChaosProxy,
+            chaosProxyUrl = uiState.chaosProxyUrl,
+            onSaveConfig = { serverUrl, useChaos, chaosUrl ->
+                viewModel.onServerUrlChanged(serverUrl)
+                viewModel.onChaosProxyToggled(useChaos)
+            },
+            onDismissRequest = { isConfigDialogOpen = false }
+        )
+    }
 
     Column(
         modifier = Modifier
@@ -64,7 +94,9 @@ fun LobbyScreen(
         Text(
             text = "ULTIMO",
             style = MaterialTheme.typography.displayLarge,
-            color = UltimoBlue
+            color = UltimoBlue,
+            fontWeight = FontWeight.Black,
+            letterSpacing = 2.sp
         )
         Text(
             text = "Authoritative Multiplayer Card Game",
@@ -74,33 +106,64 @@ fun LobbyScreen(
 
         Spacer(modifier = Modifier.height(16.dp))
 
-        // Connection Status Indicator Pill
-        ConnectionStatusPill(status = connectionStatus)
+        // Connection Status Indicator Pill + Settings Trigger
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            ConnectionStatusPill(status = uiState.connectionStatus)
 
-        Spacer(modifier = Modifier.height(32.dp))
+            Box(
+                modifier = Modifier
+                    .clip(RoundedCornerShape(16.dp))
+                    .background(SurfaceDark)
+                    .clickable { isConfigDialogOpen = true }
+                    .padding(horizontal = 12.dp, vertical = 6.dp)
+            ) {
+                Text(
+                    text = "⚙ Server",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = AccentCyan,
+                    fontWeight = FontWeight.Bold
+                )
+            }
+        }
+
+        if (uiState.useChaosProxy) {
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "⚡ GO-CHAOS-PROXY ACTIVE (Jitter & Packet Drop Simulated)",
+                style = MaterialTheme.typography.labelSmall,
+                color = UltimoYellow,
+                fontWeight = FontWeight.Bold
+            )
+        }
+
+        Spacer(modifier = Modifier.height(28.dp))
 
         // Lobby Card Container
         Card(
             modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(16.dp),
+            shape = RoundedCornerShape(20.dp),
             colors = CardDefaults.cardColors(containerColor = SurfaceDark)
         ) {
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(20.dp)
+                    .padding(22.dp)
             ) {
                 Text(
-                    text = "Join Lobby",
+                    text = "Enter Game Room",
                     style = MaterialTheme.typography.titleLarge,
-                    color = TextPrimary
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold
                 )
 
                 Spacer(modifier = Modifier.height(16.dp))
 
                 OutlinedTextField(
-                    value = username,
-                    onValueChange = { username = it },
+                    value = uiState.username,
+                    onValueChange = { viewModel.onUsernameChanged(it) },
                     label = { Text("Player Handle") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -115,8 +178,8 @@ fun LobbyScreen(
                 Spacer(modifier = Modifier.height(12.dp))
 
                 OutlinedTextField(
-                    value = roomId,
-                    onValueChange = { roomId = it },
+                    value = uiState.roomId,
+                    onValueChange = { viewModel.onRoomIdChanged(it) },
                     label = { Text("Room ID") },
                     singleLine = true,
                     modifier = Modifier.fillMaxWidth(),
@@ -131,7 +194,11 @@ fun LobbyScreen(
                 Spacer(modifier = Modifier.height(24.dp))
 
                 Button(
-                    onClick = { onJoinMatch(username, roomId) },
+                    onClick = {
+                        viewModel.joinMatch { room ->
+                            onJoinMatch(uiState.username, room)
+                        }
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp),
@@ -139,24 +206,25 @@ fun LobbyScreen(
                     colors = ButtonDefaults.buttonColors(containerColor = UltimoBlue)
                 ) {
                     Text(
-                        text = "Enter Game Room",
+                        text = "Join / Create Match",
                         style = MaterialTheme.typography.labelLarge,
-                        color = Color.White
+                        color = Color.White,
+                        fontWeight = FontWeight.Bold
                     )
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                Button(
+                OutlinedButton(
                     onClick = onNavigateToHistory,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(48.dp),
                     shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = SurfaceContainerDark)
+                    colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary)
                 ) {
                     Text(
-                        text = "Match History & Stats",
+                        text = "Match History & Statistics",
                         style = MaterialTheme.typography.bodyMedium,
                         color = TextSecondary
                     )
@@ -172,9 +240,20 @@ fun ConnectionStatusPill(status: ConnectionStatus) {
         ConnectionStatus.Connected -> StatusConnected to "Server Connected"
         is ConnectionStatus.Reconnecting -> StatusReconnecting to "Reconnecting (${status.nextRetrySeconds}s)..."
         ConnectionStatus.Connecting -> StatusReconnecting to "Connecting..."
-        ConnectionStatus.Disconnected -> StatusDisconnected to "Disconnected"
-        is ConnectionStatus.Failed -> StatusDisconnected to "Error: ${status.error}"
+        ConnectionStatus.Disconnected -> StatusDisconnected to "Offline"
+        is ConnectionStatus.Failed -> StatusDisconnected to "Connection Failed"
     }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "PillPulse")
+    val dotAlpha by infiniteTransition.animateFloat(
+        initialValue = 0.4f,
+        targetValue = 1.0f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(durationMillis = 900, easing = FastOutSlowInEasing),
+            repeatMode = RepeatMode.Reverse
+        ),
+        label = "DotPulse"
+    )
 
     Row(
         verticalAlignment = Alignment.CenterVertically,
@@ -187,7 +266,7 @@ fun ConnectionStatusPill(status: ConnectionStatus) {
             modifier = Modifier
                 .size(8.dp)
                 .clip(CircleShape)
-                .background(dotColor)
+                .background(dotColor.copy(alpha = if (status == ConnectionStatus.Connected) dotAlpha else 1f))
         )
         Spacer(modifier = Modifier.width(8.dp))
         Text(
