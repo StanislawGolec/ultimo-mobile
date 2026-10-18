@@ -10,5 +10,8 @@ enum class CommandType {
     PASS,
     CHAT,
     PING,
-    START
+    START,
+    ULTIMO,
+    CATCH_ULTIMO,
+    CHALLENGE_WILD_FOUR
 }

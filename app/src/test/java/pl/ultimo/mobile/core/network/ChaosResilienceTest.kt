@@ -80,7 +80,7 @@ class ChaosResilienceTest {
         assertThat(reconnecting.nextRetrySeconds).isEqualTo(2)
 
         // Verify commands fail gracefully while disconnected
-        val playAllowed = fakeWebSocketEngine.sendCommand(ClientCommand.DrawCard)
+        val playAllowed = fakeWebSocketEngine.sendCommand(ClientCommand.Draw)
         assertThat(playAllowed).isFalse()
 
         // Simulate successful reconnection recovery
@@ -88,7 +88,7 @@ class ChaosResilienceTest {
         assertThat(fakeWebSocketEngine.connectionStatus.value).isEqualTo(ConnectionStatus.Connected)
 
         // Verify commands succeed again
-        val recoveryPlay = fakeWebSocketEngine.sendCommand(ClientCommand.DrawCard)
+        val recoveryPlay = fakeWebSocketEngine.sendCommand(ClientCommand.Draw)
         assertThat(recoveryPlay).isTrue()
     }
 

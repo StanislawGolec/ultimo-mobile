@@ -169,7 +169,7 @@ class GameViewModelTest {
         advanceUntilIdle()
 
         assertThat(fakeWebSocketEngine.sentCommands).hasSize(1)
-        val command = fakeWebSocketEngine.sentCommands.first() as ClientCommand.PlayCard
+        val command = fakeWebSocketEngine.sentCommands.first() as ClientCommand.Play
         assertThat(command.card).isEqualTo(cardToPlay)
         assertThat(command.chosenWildColor).isNull()
     }
@@ -198,7 +198,7 @@ class GameViewModelTest {
             assertThat(stateAfterChoice.pendingWildCard).isNull()
 
             assertThat(fakeWebSocketEngine.sentCommands).hasSize(1)
-            val command = fakeWebSocketEngine.sentCommands.first() as ClientCommand.PlayCard
+            val command = fakeWebSocketEngine.sentCommands.first() as ClientCommand.Play
             assertThat(command.card).isEqualTo(wildCard)
             assertThat(command.chosenWildColor).isEqualTo(CardColor.BLUE)
         }
@@ -209,7 +209,7 @@ class GameViewModelTest {
         viewModel.onIntent(GameUiIntent.DrawCard)
         advanceUntilIdle()
 
-        assertThat(fakeWebSocketEngine.sentCommands).contains(ClientCommand.DrawCard)
+        assertThat(fakeWebSocketEngine.sentCommands).contains(ClientCommand.Draw)
     }
 
     @Test
@@ -217,7 +217,7 @@ class GameViewModelTest {
         viewModel.onIntent(GameUiIntent.PassTurn)
         advanceUntilIdle()
 
-        assertThat(fakeWebSocketEngine.sentCommands).contains(ClientCommand.PassTurn)
+        assertThat(fakeWebSocketEngine.sentCommands).contains(ClientCommand.Pass)
     }
 
     @Test
@@ -225,7 +225,7 @@ class GameViewModelTest {
         viewModel.onIntent(GameUiIntent.DeclareUltimo)
         advanceUntilIdle()
 
-        val chatCommand = fakeWebSocketEngine.sentCommands.filterIsInstance<ClientCommand.SendChat>().firstOrNull()
+        val chatCommand = fakeWebSocketEngine.sentCommands.filterIsInstance<ClientCommand.Chat>().firstOrNull()
         assertThat(chatCommand).isNotNull()
         assertThat(chatCommand?.message).isEqualTo("ULTIMO!")
     }

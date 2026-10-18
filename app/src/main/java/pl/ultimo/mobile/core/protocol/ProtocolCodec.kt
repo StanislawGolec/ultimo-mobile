@@ -37,6 +37,96 @@ object ProtocolCodec {
             is ClientCommand.Chat -> "CHAT ${command.message}\n"
             ClientCommand.Ping -> "PING\n"
             ClientCommand.Start -> "START\n"
+            ClientCommand.Ultimo -> "ULTIMO\n"
+            is ClientCommand.CatchUltimo -> "CATCH_ULTIMO ${command.targetUsername}\n"
+            ClientCommand.ChallengeWildFour -> "CHALLENGE_WILD_FOUR\n"
+        }
+    }
+
+    /**
+     * Parses a raw line sent by a client into a strongly-typed ClientCommand.
+     */
+    @Throws(ProtocolException::class)
+    fun decodeClientCommand(rawLine: String?): ClientCommand? {
+        if (rawLine.isNullOrBlank()) {
+            return null
+        }
+        val line = rawLine.trim()
+        val parts = line.split("\\s+".toRegex())
+        val opcode = parts[0].uppercase()
+
+        return when (opcode) {
+            "JOIN" -> {
+                if (parts.size < 2) throw ProtocolException("Malformed JOIN: $line")
+                val username = parts[1]
+                val roomId = if (parts.size > 2) parts[2] else null
+                ClientCommand.Join(username, roomId)
+            }
+            "PLAY" -> {
+                if (parts.size < 2) throw ProtocolException("Malformed PLAY: $line")
+                val cards = parts[1].split(",").map { parseCard(it) }
+                val color = if (parts.size > 2) parseColor(parts[2]) else null
+                ClientCommand.Play(cards, color)
+            }
+            "DRAW" -> ClientCommand.Draw
+            "PASS" -> ClientCommand.Pass
+            "CHAT" -> {
+                val msg = if (parts.size > 1) line.substring(line.indexOf(' ') + 1) else ""
+                ClientCommand.Chat(msg)
+            }
+            "PING" -> ClientCommand.Ping
+            "START" -> ClientCommand.Start
+            "ULTIMO" -> ClientCommand.Ultimo
+            "CATCH_ULTIMO" -> {
+                if (parts.size < 2) throw ProtocolException("Malformed CATCH_ULTIMO: $line")
+                ClientCommand.CatchUltimo(parts[1])
+            }
+            "CHALLENGE_WILD_FOUR" -> ClientCommand.ChallengeWildFour
+            else -> throw ProtocolException("Unknown client command opcode: $opcode")
+        }
+    }
+
+    /**
+     * Serializes a ServerEvent into wire-format string terminated by '\n'.
+     */
+    fun encodeEvent(event: ServerEvent): String {
+        return when (event) {
+            is ServerEvent.Welcome -> {
+                if (event.message.isNotBlank()) "WELCOME ${event.assignedPlayerId} ${event.message}\n"
+                else "WELCOME ${event.assignedPlayerId}\n"
+            }
+            is ServerEvent.RoomStatus -> {
+                val playerList = if (event.playerNames.isEmpty()) "-" else event.playerNames.joinToString(",")
+                "ROOM_STATUS ${event.roomId} ${event.currentPlayers} ${event.maxPlayers} $playerList\n"
+            }
+            is ServerEvent.HandUpdate -> {
+                val cardsStr = event.cards.joinToString(" ") { formatCard(it) }
+                if (cardsStr.isNotBlank()) "HAND_UPDATE $cardsStr\n" else "HAND_UPDATE\n"
+            }
+            is ServerEvent.TopCard -> "TOP_CARD ${formatCard(event.card)} ${event.activeColor.name}\n"
+            is ServerEvent.TurnAnnounced -> "TURN_ANNOUNCED ${event.activePlayerName} ${event.timeLimitMs}\n"
+            is ServerEvent.OpponentUpdate -> "OPPONENT_UPDATE ${event.opponentName} ${event.cardCount}\n"
+            is ServerEvent.DrawResult -> "DRAW_RESULT ${formatCard(event.drawnCard)} ${event.isPlayable}\n"
+            is ServerEvent.ErrorEvent -> "ERROR ${event.errorMessage}\n"
+            is ServerEvent.ChatBroadcast -> "CHAT_BROADCAST ${event.sender} ${event.message}\n"
+            is ServerEvent.GameOver -> {
+                if (event.scores.isNotBlank()) "GAME_OVER ${event.winnerName} ${event.scores}\n"
+                else "GAME_OVER ${event.winnerName}\n"
+            }
+            is ServerEvent.ServerShutdown -> "SERVER_SHUTDOWN ${event.drainSeconds}\n"
+            ServerEvent.Pong -> "PONG\n"
+            is ServerEvent.UltimoDeclared -> "ULTIMO_DECLARED ${event.playerName}\n"
+            is ServerEvent.UltimoPenalty -> "ULTIMO_PENALTY ${event.penalizedPlayer} ${event.challenger} ${event.penaltyCards}\n"
+            is ServerEvent.ChallengeResult -> {
+                val status = if (event.isGuilty) "GUILTY" else "INNOCENT"
+                "CHALLENGE_RESULT ${event.challenger} ${event.offender} $status ${event.penalizedPlayer} ${event.penaltyCards}\n"
+            }
+            is ServerEvent.RoundOver -> {
+                val status = if (event.isTournamentWon) "WON" else "IN_PROGRESS"
+                val scoreList = if (event.tournamentScores.isEmpty()) "-"
+                else event.tournamentScores.entries.joinToString(",") { "${it.key}:${it.value}" }
+                "ROUND_OVER ${event.roundWinner} ${event.pointsEarned} $status $scoreList\n"
+            }
         }
     }
 
@@ -166,6 +256,56 @@ object ProtocolCodec {
                     ServerEvent.ServerShutdown(drainSeconds)
                 }
                 "PONG" -> ServerEvent.Pong
+                "ULTIMO_DECLARED" -> {
+                    if (parts.size < 2) {
+                        throw ProtocolException("Malformed ULTIMO_DECLARED event: $line")
+                    }
+                    ServerEvent.UltimoDeclared(parts[1])
+                }
+                "ULTIMO_PENALTY" -> {
+                    if (parts.size < 4) {
+                        throw ProtocolException("Malformed ULTIMO_PENALTY event: $line")
+                    }
+                    val penalized = parts[1]
+                    val challenger = parts[2]
+                    val penaltyCards = parts[3].toIntOrNull() ?: 2
+                    ServerEvent.UltimoPenalty(penalized, challenger, penaltyCards)
+                }
+                "CHALLENGE_RESULT" -> {
+                    if (parts.size < 6) {
+                        throw ProtocolException("Malformed CHALLENGE_RESULT event: $line")
+                    }
+                    val challenger = parts[1]
+                    val offender = parts[2]
+                    val isGuilty = parts[3].equals("GUILTY", ignoreCase = true)
+                    val penalized = parts[4]
+                    val cards = parts[5].toIntOrNull() ?: 4
+                    ServerEvent.ChallengeResult(
+                        challenger = challenger,
+                        offender = offender,
+                        isGuilty = isGuilty,
+                        penalizedPlayer = penalized,
+                        penaltyCards = cards
+                    )
+                }
+                "ROUND_OVER" -> {
+                    if (parts.size < 4) {
+                        throw ProtocolException("Malformed ROUND_OVER event: $line")
+                    }
+                    val winner = parts[1]
+                    val points = parts[2].toIntOrNull() ?: 0
+                    val isWon = parts[3].equals("WON", ignoreCase = true)
+                    val scores = mutableMapOf<String, Int>()
+                    if (parts.size > 4 && parts[4] != "-") {
+                        parts[4].split(",").forEach { entry ->
+                            val kv = entry.split(":")
+                            if (kv.size == 2) {
+                                scores[kv[0]] = kv[1].toIntOrNull() ?: 0
+                            }
+                        }
+                    }
+                    ServerEvent.RoundOver(winner, points, isWon, scores)
+                }
                 else -> throw ProtocolException("Unknown server event: $eventName")
             }
         } catch (pe: ProtocolException) {

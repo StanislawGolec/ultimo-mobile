@@ -77,18 +77,55 @@ sealed interface ServerEvent {
 
     data class GameOver(
         val winnerName: String,
-        val scores: String = ""
+        val scores: String = "",
+        val finalScores: Map<String, Int> = emptyMap()
     ) : ServerEvent {
         override val type: EventType = EventType.GAME_OVER
     }
 
     data class ServerShutdown(
-        val drainTimeoutSeconds: Int = 5
+        val drainSeconds: Int = 5
     ) : ServerEvent {
+        val drainTimeoutSeconds: Int
+            get() = drainSeconds
+
         override val type: EventType = EventType.SERVER_SHUTDOWN
     }
 
     data object Pong : ServerEvent {
         override val type: EventType = EventType.PONG
+    }
+
+    data class UltimoDeclared(
+        val playerName: String
+    ) : ServerEvent {
+        override val type: EventType = EventType.ULTIMO_DECLARED
+    }
+
+    data class UltimoPenalty(
+        val penalizedPlayer: String,
+        val challenger: String,
+        val penaltyCards: Int
+    ) : ServerEvent {
+        override val type: EventType = EventType.ULTIMO_PENALTY
+    }
+
+    data class ChallengeResult(
+        val challenger: String,
+        val offender: String,
+        val isGuilty: Boolean,
+        val penalizedPlayer: String,
+        val penaltyCards: Int
+    ) : ServerEvent {
+        override val type: EventType = EventType.CHALLENGE_RESULT
+    }
+
+    data class RoundOver(
+        val roundWinner: String,
+        val pointsEarned: Int,
+        val isTournamentWon: Boolean,
+        val tournamentScores: Map<String, Int> = emptyMap()
+    ) : ServerEvent {
+        override val type: EventType = EventType.ROUND_OVER
     }
 }

@@ -197,6 +197,29 @@ class GameViewModel @Inject constructor(
             ServerEvent.Pong -> {
                 // Heartbeat response acknowledged
             }
+            is ServerEvent.UltimoDeclared -> {
+                val isMe = event.playerName.equals(_uiState.value.localPlayerName, ignoreCase = true)
+                if (isMe) {
+                    _uiState.update { it.copy(isUltimoDeclared = true) }
+                }
+                emitEffect(GameUiEffect.PlaySound(SoundType.ULTIMO_SHOUT))
+            }
+            is ServerEvent.UltimoPenalty -> {
+                val msg = "${event.penalizedPlayer} penalized ${event.penaltyCards} cards by ${event.challenger} for missing Ultimo!"
+                _uiState.update { it.copy(errorMessage = msg) }
+                emitEffect(GameUiEffect.PlaySound(SoundType.ERROR))
+                emitEffect(GameUiEffect.TriggerHaptic(HapticType.MEDIUM_SNAP))
+            }
+            is ServerEvent.ChallengeResult -> {
+                val outcome = if (event.isGuilty) "GUILTY" else "INNOCENT"
+                val msg = "Challenge by ${event.challenger}: ${event.offender} was $outcome. ${event.penalizedPlayer} drew ${event.penaltyCards} cards."
+                _uiState.update { it.copy(errorMessage = msg) }
+                emitEffect(GameUiEffect.PlaySound(SoundType.CARD_DRAW))
+            }
+            is ServerEvent.RoundOver -> {
+                val msg = "Round won by ${event.roundWinner} (+${event.pointsEarned} pts)!"
+                _uiState.update { it.copy(errorMessage = msg) }
+            }
         }
     }
 

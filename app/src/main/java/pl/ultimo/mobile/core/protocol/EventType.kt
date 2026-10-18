@@ -15,5 +15,9 @@ enum class EventType {
     CHAT_BROADCAST,
     GAME_OVER,
     SERVER_SHUTDOWN,
-    PONG
+    PONG,
+    ULTIMO_DECLARED,
+    ULTIMO_PENALTY,
+    CHALLENGE_RESULT,
+    ROUND_OVER
 }

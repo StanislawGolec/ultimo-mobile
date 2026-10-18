@@ -72,6 +72,36 @@ class ProtocolCodecTest {
         assertThat(wire).isEqualTo("CHAT Good game!\n")
     }
 
+    @Test
+    fun encodeCommand_tournamentCommands_formatCorrectly() {
+        assertThat(ProtocolCodec.encodeCommand(ClientCommand.Ultimo)).isEqualTo("ULTIMO\n")
+        assertThat(ProtocolCodec.encodeCommand(ClientCommand.CatchUltimo("Bob"))).isEqualTo("CATCH_ULTIMO Bob\n")
+        assertThat(ProtocolCodec.encodeCommand(ClientCommand.ChallengeWildFour)).isEqualTo("CHALLENGE_WILD_FOUR\n")
+    }
+
+    @Test
+    fun decodeClientCommand_tournamentCommands_decodeCleanly() {
+        assertThat(ProtocolCodec.decodeClientCommand("ULTIMO\n")).isEqualTo(ClientCommand.Ultimo)
+
+        val catchCmd = ProtocolCodec.decodeClientCommand("CATCH_ULTIMO Bob\n")
+        assertThat(catchCmd).isEqualTo(ClientCommand.CatchUltimo("Bob"))
+
+        assertThat(ProtocolCodec.decodeClientCommand("CHALLENGE_WILD_FOUR\n"))
+            .isEqualTo(ClientCommand.ChallengeWildFour)
+    }
+
+    @Test
+    fun decodeClientCommand_standardCommands_decodeCleanly() {
+        assertThat(ProtocolCodec.decodeClientCommand("JOIN Alice room_1\n"))
+            .isEqualTo(ClientCommand.Join("Alice", "room_1"))
+        assertThat(ProtocolCodec.decodeClientCommand("DRAW\n")).isEqualTo(ClientCommand.Draw)
+        assertThat(ProtocolCodec.decodeClientCommand("PASS\n")).isEqualTo(ClientCommand.Pass)
+        assertThat(ProtocolCodec.decodeClientCommand("PING\n")).isEqualTo(ClientCommand.Ping)
+        assertThat(ProtocolCodec.decodeClientCommand("START\n")).isEqualTo(ClientCommand.Start)
+        assertThat(ProtocolCodec.decodeClientCommand("CHAT Hello all!\n"))
+            .isEqualTo(ClientCommand.Chat("Hello all!"))
+    }
+
     // --- Event Decoding Tests ---
 
     @Test
@@ -205,7 +235,111 @@ class ProtocolCodecTest {
         assertThat(event).isEqualTo(ServerEvent.Pong)
     }
 
+    @Test
+    fun decodeEvent_ultimoDeclared_decodesPlayerName() {
+        val event = ProtocolCodec.decodeEvent("ULTIMO_DECLARED Alice\n")
+        assertThat(event).isInstanceOf(ServerEvent.UltimoDeclared::class.java)
+        val ultimo = event as ServerEvent.UltimoDeclared
+        assertThat(ultimo.playerName).isEqualTo("Alice")
+    }
+
+    @Test
+    fun decodeEvent_ultimoPenalty_decodesDetails() {
+        val event = ProtocolCodec.decodeEvent("ULTIMO_PENALTY Bob Alice 2\n")
+        assertThat(event).isInstanceOf(ServerEvent.UltimoPenalty::class.java)
+        val penalty = event as ServerEvent.UltimoPenalty
+        assertThat(penalty.penalizedPlayer).isEqualTo("Bob")
+        assertThat(penalty.challenger).isEqualTo("Alice")
+        assertThat(penalty.penaltyCards).isEqualTo(2)
+    }
+
+    @Test
+    fun decodeEvent_challengeResult_guilty_decodesCorrectly() {
+        val event = ProtocolCodec.decodeEvent("CHALLENGE_RESULT Alice Bob GUILTY Bob 4\n")
+        assertThat(event).isInstanceOf(ServerEvent.ChallengeResult::class.java)
+        val challenge = event as ServerEvent.ChallengeResult
+        assertThat(challenge.challenger).isEqualTo("Alice")
+        assertThat(challenge.offender).isEqualTo("Bob")
+        assertThat(challenge.isGuilty).isTrue()
+        assertThat(challenge.penalizedPlayer).isEqualTo("Bob")
+        assertThat(challenge.penaltyCards).isEqualTo(4)
+    }
+
+    @Test
+    fun decodeEvent_challengeResult_innocent_decodesCorrectly() {
+        val event = ProtocolCodec.decodeEvent("CHALLENGE_RESULT Alice Bob INNOCENT Alice 6\n")
+        assertThat(event).isInstanceOf(ServerEvent.ChallengeResult::class.java)
+        val challenge = event as ServerEvent.ChallengeResult
+        assertThat(challenge.challenger).isEqualTo("Alice")
+        assertThat(challenge.offender).isEqualTo("Bob")
+        assertThat(challenge.isGuilty).isFalse()
+        assertThat(challenge.penalizedPlayer).isEqualTo("Alice")
+        assertThat(challenge.penaltyCards).isEqualTo(6)
+    }
+
+    @Test
+    fun decodeEvent_roundOver_wonWithScores_decodesCorrectly() {
+        val event = ProtocolCodec.decodeEvent("ROUND_OVER Alice 45 WON Alice:45,Bob:12\n")
+        assertThat(event).isInstanceOf(ServerEvent.RoundOver::class.java)
+        val roundOver = event as ServerEvent.RoundOver
+        assertThat(roundOver.roundWinner).isEqualTo("Alice")
+        assertThat(roundOver.pointsEarned).isEqualTo(45)
+        assertThat(roundOver.isTournamentWon).isTrue()
+        assertThat(roundOver.tournamentScores).containsExactly("Alice", 45, "Bob", 12)
+    }
+
+    @Test
+    fun decodeEvent_roundOver_inProgressHyphenScores_decodesEmptyMap() {
+        val event = ProtocolCodec.decodeEvent("ROUND_OVER Charlie 20 IN_PROGRESS -\n")
+        assertThat(event).isInstanceOf(ServerEvent.RoundOver::class.java)
+        val roundOver = event as ServerEvent.RoundOver
+        assertThat(roundOver.roundWinner).isEqualTo("Charlie")
+        assertThat(roundOver.pointsEarned).isEqualTo(20)
+        assertThat(roundOver.isTournamentWon).isFalse()
+        assertThat(roundOver.tournamentScores).isEmpty()
+    }
+
+    @Test
+    fun encodeEvent_tournamentEvents_formatCorrectly() {
+        val declared = ServerEvent.UltimoDeclared("Alice")
+        assertThat(ProtocolCodec.encodeEvent(declared)).isEqualTo("ULTIMO_DECLARED Alice\n")
+
+        val penalty = ServerEvent.UltimoPenalty("Bob", "Alice", 2)
+        assertThat(ProtocolCodec.encodeEvent(penalty)).isEqualTo("ULTIMO_PENALTY Bob Alice 2\n")
+
+        val challenge = ServerEvent.ChallengeResult("Alice", "Bob", true, "Bob", 4)
+        assertThat(ProtocolCodec.encodeEvent(challenge)).isEqualTo("CHALLENGE_RESULT Alice Bob GUILTY Bob 4\n")
+
+        val roundOverWon = ServerEvent.RoundOver("Alice", 45, true, mapOf("Alice" to 45, "Bob" to 12))
+        assertThat(ProtocolCodec.encodeEvent(roundOverWon)).isEqualTo("ROUND_OVER Alice 45 WON Alice:45,Bob:12\n")
+
+        val roundOverProgress = ServerEvent.RoundOver("Bob", 10, false, emptyMap())
+        assertThat(ProtocolCodec.encodeEvent(roundOverProgress)).isEqualTo("ROUND_OVER Bob 10 IN_PROGRESS -\n")
+    }
+
     // --- Edge Cases & Exception Handling Tests ---
+
+    @Test
+    fun decodeClientCommand_nullOrBlank_returnsNull() {
+        assertThat(ProtocolCodec.decodeClientCommand(null)).isNull()
+        assertThat(ProtocolCodec.decodeClientCommand("")).isNull()
+        assertThat(ProtocolCodec.decodeClientCommand("   \n")).isNull()
+    }
+
+    @Test
+    fun decodeClientCommand_unknownOpcode_throwsProtocolException() {
+        val ex = assertThrows(ProtocolException::class.java) {
+            ProtocolCodec.decodeClientCommand("INVALID_OPCODE arg\n")
+        }
+        assertThat(ex).hasMessageThat().contains("Unknown client command opcode: INVALID_OPCODE")
+    }
+
+    @Test
+    fun decodeClientCommand_malformedCommands_throwsProtocolException() {
+        assertThrows(ProtocolException::class.java) { ProtocolCodec.decodeClientCommand("JOIN") }
+        assertThrows(ProtocolException::class.java) { ProtocolCodec.decodeClientCommand("PLAY") }
+        assertThrows(ProtocolException::class.java) { ProtocolCodec.decodeClientCommand("CATCH_ULTIMO") }
+    }
 
     @Test
     fun decodeEvent_nullOrBlank_throwsProtocolException() {
@@ -220,6 +354,14 @@ class ProtocolCodecTest {
             ProtocolCodec.decodeEvent("FOOBAR 123")
         }
         assertThat(ex).hasMessageThat().contains("Unknown server event: FOOBAR")
+    }
+
+    @Test
+    fun decodeEvent_malformedTournamentEvents_throwsProtocolException() {
+        assertThrows(ProtocolException::class.java) { ProtocolCodec.decodeEvent("ULTIMO_DECLARED") }
+        assertThrows(ProtocolException::class.java) { ProtocolCodec.decodeEvent("ULTIMO_PENALTY Bob") }
+        assertThrows(ProtocolException::class.java) { ProtocolCodec.decodeEvent("CHALLENGE_RESULT Alice Bob GUILTY") }
+        assertThrows(ProtocolException::class.java) { ProtocolCodec.decodeEvent("ROUND_OVER Alice") }
     }
 
     @Test

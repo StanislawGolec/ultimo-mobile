@@ -50,4 +50,25 @@ sealed interface ClientCommand {
     data object Start : ClientCommand {
         override val type: CommandType = CommandType.START
     }
+
+    /**
+     * Declares 'Ultimo!' when holding 2 cards and playing 1.
+     */
+    data object Ultimo : ClientCommand {
+        override val type: CommandType = CommandType.ULTIMO
+    }
+
+    /**
+     * Challenges an opponent holding 1 card who failed to declare Ultimo.
+     */
+    data class CatchUltimo(val targetUsername: String) : ClientCommand {
+        override val type: CommandType = CommandType.CATCH_ULTIMO
+    }
+
+    /**
+     * Challenges the legality of a Wild Draw Four played by the previous player.
+     */
+    data object ChallengeWildFour : ClientCommand {
+        override val type: CommandType = CommandType.CHALLENGE_WILD_FOUR
+    }
 }
