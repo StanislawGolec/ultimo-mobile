@@ -3,6 +3,7 @@ package pl.ultimo.mobile.feature.game.components
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.spring
+import androidx.compose.foundation.border
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -22,10 +24,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import pl.ultimo.mobile.core.model.Card
 import pl.ultimo.mobile.core.model.CardColor
+import pl.ultimo.mobile.core.model.CardValue
+import pl.ultimo.mobile.ui.theme.AccentCyan
 import pl.ultimo.mobile.ui.theme.TextMuted
 import kotlin.math.min
 
@@ -43,6 +49,8 @@ fun HandCarousel(
     activeColor: CardColor,
     isMyTurn: Boolean,
     modifier: Modifier = Modifier,
+    pendingSkipDeflection: Boolean = false,
+    pendingDrawPenalty: Int = 0,
     dropTargetBounds: Rect? = null,
     onPlayCard: (Card) -> Unit = {}
 ) {
@@ -65,6 +73,7 @@ fun HandCarousel(
     var selectedCardId by remember { mutableStateOf<String?>(null) }
     val cardWidth = 80.dp
     val handCount = hand.size
+    val isDefenseActive = pendingSkipDeflection || pendingDrawPenalty > 0
 
     BoxWithConstraints(
         modifier = modifier
@@ -101,7 +110,14 @@ fun HandCarousel(
             hand.forEachIndexed { index, card ->
                 val cardToken = "${card.toWireToken()}_$index"
                 val isSelected = selectedCardId == cardToken
-                val isPlayable = isMyTurn && card.canPlayOn(topCard, activeColor)
+                val isPlayable = isMyTurn && card.canPlayOn(
+                    topCard = topCard,
+                    activeColor = activeColor,
+                    pendingSkipDeflection = pendingSkipDeflection,
+                    pendingDrawPenalty = pendingDrawPenalty
+                )
+                val isDimmed = isDefenseActive && !isPlayable
+                val isSkipDeflectionCard = pendingSkipDeflection && card.value == CardValue.SKIP
 
                 // Fan geometry calculation
                 val relativeIndex = index - centerIndex
@@ -129,23 +145,37 @@ fun HandCarousel(
                     isPlayable = isPlayable,
                     initialRotation = rotationAngle,
                     baseVerticalOffset = archOffsetDp + 24.dp,
-                    isSelected = isSelected,
+                    isSelected = isSelected && !isDimmed,
                     dropTargetBounds = dropTargetBounds,
-                    modifier = Modifier.offset(x = cardX),
+                    modifier = Modifier
+                        .offset(x = cardX)
+                        .graphicsLayer {
+                            alpha = if (isDimmed) 0.4f else 1.0f
+                        }
+                        .then(
+                            if (isSkipDeflectionCard) {
+                                Modifier.border(2.5.dp, AccentCyan, RoundedCornerShape(10.dp))
+                            } else Modifier
+                        )
+                        .testTag("hand_card_${card.toWireToken()}"),
                     onCardClicked = { clickedCard ->
-                        if (isSelected) {
-                            // Second tap on selected card plays it if legal
-                            if (isPlayable) {
-                                onPlayCard(clickedCard)
-                                selectedCardId = null
+                        if (!isDimmed) {
+                            if (isSelected) {
+                                // Second tap on selected card plays it if legal
+                                if (isPlayable) {
+                                    onPlayCard(clickedCard)
+                                    selectedCardId = null
+                                }
+                            } else {
+                                selectedCardId = cardToken
                             }
-                        } else {
-                            selectedCardId = cardToken
                         }
                     },
                     onCardPlayed = { playedCard ->
-                        onPlayCard(playedCard)
-                        selectedCardId = null
+                        if (!isDimmed) {
+                            onPlayCard(playedCard)
+                            selectedCardId = null
+                        }
                     }
                 )
             }

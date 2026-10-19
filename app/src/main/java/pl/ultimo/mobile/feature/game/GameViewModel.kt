@@ -152,7 +152,11 @@ class GameViewModel @Inject constructor(
                 _uiState.update { state ->
                     val updated = state.opponents.map { opp ->
                         if (opp.name.equals(event.opponentName, ignoreCase = true)) {
-                            opp.copy(cardCount = event.cardCount, isDisconnected = false)
+                            opp.copy(
+                                cardCount = event.cardCount,
+                                isDisconnected = false,
+                                hasDeclaredUltimo = if (event.cardCount > 1) false else opp.hasDeclaredUltimo
+                            )
                         } else {
                             opp
                         }
@@ -243,8 +247,16 @@ class GameViewModel @Inject constructor(
             }
             is ServerEvent.UltimoDeclared -> {
                 val isMe = event.playerName.equals(_uiState.value.localPlayerName, ignoreCase = true)
-                if (isMe) {
-                    _uiState.update { it.copy(isUltimoDeclared = true) }
+                _uiState.update { state ->
+                    val updatedOpponents = state.opponents.map { opp ->
+                        if (opp.name.equals(event.playerName, ignoreCase = true)) {
+                            opp.copy(hasDeclaredUltimo = true)
+                        } else opp
+                    }
+                    state.copy(
+                        isUltimoDeclared = if (isMe) true else state.isUltimoDeclared,
+                        opponents = updatedOpponents
+                    )
                 }
                 emitEffect(GameUiEffect.PlaySound(SoundType.ULTIMO_SHOUT))
             }
@@ -301,6 +313,18 @@ class GameViewModel @Inject constructor(
         }
     }
 
+    fun setDefenseState(
+        pendingSkipDeflection: Boolean = false,
+        pendingDrawPenalty: Int = 0
+    ) {
+        _uiState.update {
+            it.copy(
+                pendingSkipDeflection = pendingSkipDeflection,
+                pendingDrawPenalty = pendingDrawPenalty
+            )
+        }
+    }
+
     fun onIntent(intent: GameUiIntent) {
         when (intent) {
             is GameUiIntent.CardClicked -> {
@@ -324,6 +348,10 @@ class GameViewModel @Inject constructor(
                 _uiState.update { it.copy(isWildPickerVisible = false, pendingWildCard = null) }
             }
             GameUiIntent.DrawCard -> {
+                if (_uiState.value.pendingDrawPenalty > 0) {
+                    emitEffect(GameUiEffect.TriggerHaptic(HapticType.HEAVY_WARNING))
+                    _uiState.update { it.copy(pendingDrawPenalty = 0) }
+                }
                 drawCardUseCase()
             }
             GameUiIntent.PassTurn -> {
@@ -368,8 +396,10 @@ class GameViewModel @Inject constructor(
             }
             is GameUiIntent.CatchUltimo -> {
                 viewModelScope.launch {
-                    webSocketEngine.sendCommand(ClientCommand.Chat("CATCH ${intent.targetUsername}"))
+                    webSocketEngine.sendCommand(ClientCommand.CatchUltimo(intent.targetUsername))
                 }
+                emitEffect(GameUiEffect.PlaySound(SoundType.ULTIMO_SHOUT))
+                emitEffect(GameUiEffect.TriggerHaptic(HapticType.MEDIUM_SNAP))
             }
             GameUiIntent.DismissAutoPass -> {
                 _uiState.update { it.copy(autoPassNotice = null) }
@@ -385,20 +415,35 @@ class GameViewModel @Inject constructor(
             card = card,
             chosenWildColor = chosenWildColor,
             topCard = _uiState.value.topCard,
-            activeColor = _uiState.value.activeColor
+            activeColor = _uiState.value.activeColor,
+            pendingSkipDeflection = _uiState.value.pendingSkipDeflection,
+            pendingDrawPenalty = _uiState.value.pendingDrawPenalty
         )
 
         if (result.isSuccess) {
+            val wasDeflecting = _uiState.value.pendingSkipDeflection
+            val wasStacking = _uiState.value.pendingDrawPenalty > 0
+
             // Optimistic card reduction
             _uiState.update { state ->
                 val newHand = state.hand.toMutableList().apply { remove(card) }
                 state.copy(
                     hand = newHand,
-                    cardsPlayedCount = state.cardsPlayedCount + 1
+                    cardsPlayedCount = state.cardsPlayedCount + 1,
+                    pendingSkipDeflection = false,
+                    pendingDrawPenalty = 0
                 )
             }
-            emitEffect(GameUiEffect.PlaySound(SoundType.CARD_PLAY))
-            emitEffect(GameUiEffect.TriggerHaptic(HapticType.MEDIUM_SNAP))
+            if (wasDeflecting) {
+                emitEffect(GameUiEffect.PlaySound(SoundType.SHIELD_DEFLECT))
+                emitEffect(GameUiEffect.TriggerHaptic(HapticType.MEDIUM_SNAP))
+            } else if (wasStacking) {
+                emitEffect(GameUiEffect.PlaySound(SoundType.STACK_ACCUMULATE))
+                emitEffect(GameUiEffect.TriggerHaptic(HapticType.MEDIUM_SNAP))
+            } else {
+                emitEffect(GameUiEffect.PlaySound(SoundType.CARD_PLAY))
+                emitEffect(GameUiEffect.TriggerHaptic(HapticType.MEDIUM_SNAP))
+            }
 
             viewModelScope.launch {
                 cardStatDao.recordCardPlayed(card.toWireToken())

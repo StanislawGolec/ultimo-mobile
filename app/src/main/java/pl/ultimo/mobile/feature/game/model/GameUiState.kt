@@ -44,7 +44,10 @@ data class GameUiState(
     val drawDeckCount: Int = 108
 ) {
     val isUltimoCallable: Boolean
-        get() = hand.size <= 2 && hand.isNotEmpty() && !isUltimoDeclared
+        get() = hand.size == 1 && !isUltimoDeclared
+
+    val isShoutUltimoVisible: Boolean
+        get() = hand.size in 1..2 && !isUltimoDeclared
 
     val isGameOver: Boolean
         get() = gameOverWinner != null

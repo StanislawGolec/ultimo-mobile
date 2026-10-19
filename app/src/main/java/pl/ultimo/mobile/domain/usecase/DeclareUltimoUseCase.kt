@@ -8,8 +8,8 @@ class DeclareUltimoUseCase @Inject constructor(
     private val webSocketEngine: WebSocketEngine
 ) {
     operator fun invoke(handSize: Int): Result<Unit> {
-        if (handSize != 1) {
-            return Result.failure(IllegalStateException("Ultimo can only be declared when holding exactly 1 card (current hand size: $handSize)"))
+        if (handSize !in 1..2) {
+            return Result.failure(IllegalStateException("Ultimo can only be declared when holding 1 or 2 cards (current hand size: $handSize)"))
         }
 
         val success = webSocketEngine.sendCommand(ClientCommand.Chat("ULTIMO!"))
