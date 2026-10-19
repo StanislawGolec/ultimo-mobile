@@ -1,6 +1,12 @@
 package pl.ultimo.mobile.feature.game
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -38,10 +44,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
@@ -52,10 +62,12 @@ import pl.ultimo.mobile.core.model.Card
 import pl.ultimo.mobile.core.model.CardColor
 import pl.ultimo.mobile.core.model.CardValue
 import pl.ultimo.mobile.core.network.ConnectionStatus
+import pl.ultimo.mobile.feature.game.components.DefenseHudBanner
 import pl.ultimo.mobile.feature.game.components.HandCarousel
 import pl.ultimo.mobile.feature.game.components.OpponentBar
 import pl.ultimo.mobile.feature.game.components.TableCenterView
 import pl.ultimo.mobile.feature.game.components.TurnCountdownTimer
+import pl.ultimo.mobile.feature.game.dialog.PodiumDialog
 import pl.ultimo.mobile.feature.game.dialog.WildColorPickerDialog
 import pl.ultimo.mobile.feature.game.model.GameUiEffect
 import pl.ultimo.mobile.feature.game.model.GameUiIntent
@@ -113,9 +125,17 @@ fun GameRoute(
         connectionStatus = uiState.connectionStatus,
         isWildPickerVisible = uiState.isWildPickerVisible,
         isUltimoCallable = uiState.isUltimoCallable,
+        isShoutUltimoVisible = uiState.isShoutUltimoVisible,
         isHost = uiState.isHost,
         totalPlayerCount = uiState.totalPlayerCount,
         drawDeckCount = uiState.drawDeckCount,
+        pendingSkipDeflection = uiState.pendingSkipDeflection,
+        pendingDrawPenalty = uiState.pendingDrawPenalty,
+        autoPassNotice = uiState.autoPassNotice,
+        isSpectating = uiState.isSpectating,
+        myPlacementRank = uiState.myPlacementRank,
+        isPodiumVisible = uiState.isPodiumVisible,
+        podiumStandings = uiState.podiumStandings,
         errorMessage = uiState.errorMessage,
         gameOverWinner = uiState.gameOverWinner,
         onPlayCard = { card ->
@@ -136,6 +156,15 @@ fun GameRoute(
         },
         onDeclareUltimo = {
             viewModel.onIntent(GameUiIntent.DeclareUltimo)
+        },
+        onCatchUltimo = { target ->
+            viewModel.onIntent(GameUiIntent.CatchUltimo(target))
+        },
+        onDismissAutoPass = {
+            viewModel.onIntent(GameUiIntent.DismissAutoPass)
+        },
+        onDismissPodium = {
+            viewModel.onIntent(GameUiIntent.DismissPodium)
         },
         onStartMatch = {
             viewModel.onIntent(GameUiIntent.StartMatch)
@@ -159,9 +188,9 @@ fun GameRoute(
 /**
  * Stateless Game Table composable screen.
  *
- * Integrates opponent status indicators, turn countdown gauge, drag-and-drop table arena,
- * bottom fan-shaped hand carousel, reconnection notification banner, host ownership controls,
- * and dialog modals.
+ * Integrates opponent status indicators, turn countdown gauge, tactical defense HUD banner,
+ * drag-and-drop table arena, bottom fan-shaped hand carousel (or spectator bar),
+ * reconnection notification banner, host ownership controls, and dialog modals.
  */
 @Composable
 fun GameTableScreen(
@@ -177,9 +206,17 @@ fun GameTableScreen(
     connectionStatus: ConnectionStatus = ConnectionStatus.Connected,
     isWildPickerVisible: Boolean = false,
     isUltimoCallable: Boolean = false,
+    isShoutUltimoVisible: Boolean = false,
     isHost: Boolean = false,
     totalPlayerCount: Int = 1,
     drawDeckCount: Int = 32,
+    pendingSkipDeflection: Boolean = false,
+    pendingDrawPenalty: Int = 0,
+    autoPassNotice: String? = null,
+    isSpectating: Boolean = false,
+    myPlacementRank: Int? = null,
+    isPodiumVisible: Boolean = false,
+    podiumStandings: Map<Int, String> = emptyMap(),
     errorMessage: String? = null,
     gameOverWinner: String? = null,
     onPlayCard: (Card) -> Unit = {},
@@ -187,6 +224,9 @@ fun GameTableScreen(
     onDrawCard: () -> Unit = {},
     onPassTurn: () -> Unit = {},
     onDeclareUltimo: () -> Unit = {},
+    onCatchUltimo: (String) -> Unit = {},
+    onDismissAutoPass: () -> Unit = {},
+    onDismissPodium: () -> Unit = {},
     onStartMatch: () -> Unit = {},
     onKickPlayer: (String) -> Unit = {},
     onTransferHost: (String) -> Unit = {},
@@ -202,8 +242,15 @@ fun GameTableScreen(
         )
     }
 
-    // 2. Game Over Dialog
-    if (gameOverWinner != null) {
+    // 2. Stepped Podium Standings Dialog (Stage 12)
+    if (isPodiumVisible) {
+        PodiumDialog(
+            standings = podiumStandings,
+            onReturnToLobby = onLeaveRoom,
+            onDismissRequest = onDismissPodium
+        )
+    } else if (gameOverWinner != null) {
+        // Fallback single-winner Game Over Dialog
         GameOverDialog(
             winner = gameOverWinner,
             onReturnToLobby = onLeaveRoom
@@ -218,7 +265,7 @@ fun GameTableScreen(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.SpaceBetween
     ) {
-        // Top Section: Header, Reconnection Banner, Opponent Bar
+        // Top Section: Header, Reconnection Banner, Opponent Bar, Defense HUD
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -355,13 +402,23 @@ fun GameTableScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Opponent status indicators with Host Kick & Transfer actions
+            // Opponent status indicators with Host Kick, Transfer & Catch Ultimo actions
             OpponentBar(
                 opponents = opponents,
                 activePlayerName = activePlayerName,
                 isHost = isHost,
                 onKickPlayer = onKickPlayer,
-                onTransferHost = onTransferHost
+                onTransferHost = onTransferHost,
+                onCatchUltimo = onCatchUltimo
+            )
+
+            // Stage 11: Action Defending HUD Banner
+            DefenseHudBanner(
+                pendingSkipDeflection = pendingSkipDeflection,
+                pendingDrawPenalty = pendingDrawPenalty,
+                autoPassNotice = autoPassNotice,
+                onTakePenalty = onDrawCard,
+                onDismissAutoPass = onDismissAutoPass
             )
         }
 
@@ -370,13 +427,26 @@ fun GameTableScreen(
             topCard = topCard,
             activeColor = activeColor,
             drawDeckCount = drawDeckCount,
+            pendingDrawPenalty = pendingDrawPenalty,
             onDrawCard = onDrawCard,
             onDropTargetPositioned = { bounds ->
                 dropTargetBounds = bounds
             }
         )
 
-        // Bottom Action Controls: Ultimo shout button, Host Start Match button, Pass button
+        // Bottom Action Controls: Animated Golden Starburst ULTIMO Shout button, Host Start Match, Pass button
+        val canShoutUltimo = isShoutUltimoVisible || isUltimoCallable || (hand.size in 1..2 && !isSpectating)
+        val starburstPulse = rememberInfiniteTransition(label = "StarburstPulse")
+        val starburstScale by starburstPulse.animateFloat(
+            initialValue = 1.0f,
+            targetValue = if (canShoutUltimo) 1.08f else 1.0f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(500, easing = FastOutSlowInEasing),
+                repeatMode = RepeatMode.Reverse
+            ),
+            label = "StarburstScale"
+        )
+
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -386,16 +456,20 @@ fun GameTableScreen(
         ) {
             Button(
                 onClick = onDeclareUltimo,
-                enabled = isUltimoCallable,
+                enabled = canShoutUltimo,
+                modifier = Modifier
+                    .scale(if (canShoutUltimo) starburstScale else 1f)
+                    .testTag("btn_shout_ultimo"),
                 colors = ButtonDefaults.buttonColors(
-                    containerColor = UltimoYellow,
+                    containerColor = Color(0xFFFFD700),
                     disabledContainerColor = SurfaceDark
                 ),
-                shape = RoundedCornerShape(20.dp)
+                shape = RoundedCornerShape(20.dp),
+                elevation = ButtonDefaults.buttonElevation(defaultElevation = if (canShoutUltimo) 8.dp else 0.dp)
             ) {
                 Text(
-                    text = "ULTIMO!",
-                    color = if (isUltimoCallable) BackgroundDark else TextMuted,
+                    text = if (canShoutUltimo) "★ SHOUT ULTIMO! ★" else "ULTIMO!",
+                    color = if (canShoutUltimo) BackgroundDark else TextMuted,
                     fontWeight = FontWeight.Black,
                     fontSize = 13.sp
                 )
@@ -419,7 +493,7 @@ fun GameTableScreen(
 
             OutlinedButton(
                 onClick = onPassTurn,
-                enabled = isMyTurn,
+                enabled = isMyTurn && !isSpectating,
                 shape = RoundedCornerShape(20.dp),
                 colors = ButtonDefaults.outlinedButtonColors(
                     contentColor = AccentCyan,
@@ -430,7 +504,7 @@ fun GameTableScreen(
             }
         }
 
-        // Bottom Section: Local Player Avatar / Status & Hand Carousel
+        // Bottom Section: Local Player Avatar / Status & Hand Carousel (or Spectator Mode Bar)
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
@@ -494,14 +568,67 @@ fun GameTableScreen(
 
             Spacer(modifier = Modifier.height(4.dp))
 
-            HandCarousel(
-                hand = hand,
-                topCard = topCard,
-                activeColor = activeColor,
-                isMyTurn = isMyTurn,
-                dropTargetBounds = dropTargetBounds,
-                onPlayCard = onPlayCard
-            )
+            if (isSpectating) {
+                // Stage 12: Spectator Camera Mode Banner for Finished Players
+                val rankLabel = when (myPlacementRank) {
+                    1 -> "1ST"
+                    2 -> "2ND"
+                    3 -> "3RD"
+                    null -> "FINISHED"
+                    else -> "${myPlacementRank}TH"
+                }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(140.dp)
+                        .padding(horizontal = 16.dp, vertical = 12.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(
+                            Brush.horizontalGradient(
+                                colors = listOf(
+                                    Color(0xFF1E293B),
+                                    Color(0xFF0F172A),
+                                    Color(0xFF1E293B)
+                                )
+                            )
+                        )
+                        .border(2.dp, Color(0xFFFFD700).copy(alpha = 0.7f), RoundedCornerShape(16.dp))
+                        .padding(16.dp)
+                        .testTag("spectator_banner"),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Text(
+                            text = "🏆 $rankLabel PLACE! You finished!",
+                            style = MaterialTheme.typography.titleMedium,
+                            color = Color(0xFFFFD700),
+                            fontWeight = FontWeight.ExtraBold,
+                            textAlign = TextAlign.Center
+                        )
+                        Text(
+                            text = "Spectating remaining match in real time...",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = AccentCyan,
+                            fontWeight = FontWeight.SemiBold,
+                            textAlign = TextAlign.Center
+                        )
+                    }
+                }
+            } else {
+                HandCarousel(
+                    hand = hand,
+                    topCard = topCard,
+                    activeColor = activeColor,
+                    isMyTurn = isMyTurn,
+                    pendingSkipDeflection = pendingSkipDeflection,
+                    pendingDrawPenalty = pendingDrawPenalty,
+                    dropTargetBounds = dropTargetBounds,
+                    onPlayCard = onPlayCard
+                )
+            }
         }
     }
 }
