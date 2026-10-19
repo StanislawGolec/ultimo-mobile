@@ -15,8 +15,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.EmojiEvents
 import androidx.compose.material3.Button
@@ -49,12 +51,9 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import pl.ultimo.mobile.ui.theme.AccentCyan
 import pl.ultimo.mobile.ui.theme.BackgroundDark
-import pl.ultimo.mobile.ui.theme.SurfaceContainerDark
-import pl.ultimo.mobile.ui.theme.SurfaceDark
 import pl.ultimo.mobile.ui.theme.TextPrimary
 import pl.ultimo.mobile.ui.theme.TextSecondary
 import pl.ultimo.mobile.ui.theme.UltimoRed
-import pl.ultimo.mobile.ui.theme.UltimoYellow
 
 private val GoldGradient = listOf(Color(0xFFFFDF00), Color(0xFFD4AF37), Color(0xFF996515))
 private val SilverGradient = listOf(Color(0xFFE0E0E0), Color(0xFFB0BEC5), Color(0xFF78909C))
@@ -83,17 +82,17 @@ fun PodiumDialog(
     }
 
     val p1Height by animateDpAsState(
-        targetValue = if (isRisen) 130.dp else 20.dp,
+        targetValue = if (isRisen) 96.dp else 20.dp,
         animationSpec = tween(durationMillis = 700, easing = FastOutSlowInEasing),
         label = "P1Height"
     )
     val p2Height by animateDpAsState(
-        targetValue = if (isRisen) 90.dp else 20.dp,
+        targetValue = if (isRisen) 68.dp else 20.dp,
         animationSpec = tween(durationMillis = 600, easing = FastOutSlowInEasing),
         label = "P2Height"
     )
     val p3Height by animateDpAsState(
-        targetValue = if (isRisen) 60.dp else 20.dp,
+        targetValue = if (isRisen) 48.dp else 20.dp,
         animationSpec = tween(durationMillis = 500, easing = FastOutSlowInEasing),
         label = "P3Height"
     )
@@ -112,7 +111,7 @@ fun PodiumDialog(
     ) {
         Card(
             modifier = modifier
-                .padding(20.dp)
+                .padding(12.dp)
                 .fillMaxWidth(0.95f)
                 .shadow(24.dp, RoundedCornerShape(24.dp))
                 .border(2.dp, Color(0xFFFFD700).copy(alpha = 0.5f), RoundedCornerShape(24.dp))
@@ -123,7 +122,8 @@ fun PodiumDialog(
             Column(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(20.dp),
+                    .verticalScroll(rememberScrollState())
+                    .padding(16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
                 // Header
@@ -135,11 +135,11 @@ fun PodiumDialog(
                         imageVector = Icons.Default.EmojiEvents,
                         contentDescription = "Match Standings Trophy",
                         tint = Color(0xFFFFD700),
-                        modifier = Modifier.size(32.dp)
+                        modifier = Modifier.size(28.dp)
                     )
                     Text(
                         text = "MATCH STANDINGS",
-                        style = MaterialTheme.typography.titleLarge,
+                        style = MaterialTheme.typography.titleMedium,
                         color = TextPrimary,
                         fontWeight = FontWeight.ExtraBold,
                         letterSpacing = 1.sp
@@ -150,14 +150,14 @@ fun PodiumDialog(
                     text = "Last-Man-Standing Battle Results",
                     style = MaterialTheme.typography.bodySmall,
                     color = TextSecondary,
-                    modifier = Modifier.padding(top = 4.dp, bottom = 20.dp)
+                    modifier = Modifier.padding(top = 2.dp, bottom = 12.dp)
                 )
 
                 // 3-Column Olympic Podium: 2nd (Silver), 1st (Gold), 3rd (Bronze)
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .padding(horizontal = 8.dp),
+                        .padding(horizontal = 4.dp),
                     horizontalArrangement = Arrangement.SpaceEvenly,
                     verticalAlignment = Alignment.Bottom
                 ) {
@@ -198,14 +198,14 @@ fun PodiumDialog(
 
                 // Submerged Pedestal for Last Place (if >= 4 players or last rank is known)
                 if (hasSubmerged && lastName.isNotBlank()) {
-                    Spacer(modifier = Modifier.height(18.dp))
+                    Spacer(modifier = Modifier.height(10.dp))
                     Box(
                         modifier = Modifier
-                            .fillMaxWidth(0.85f)
-                            .clip(RoundedCornerShape(12.dp))
+                            .fillMaxWidth(0.88f)
+                            .clip(RoundedCornerShape(10.dp))
                             .background(Brush.horizontalGradient(SubmergedGradient))
-                            .border(1.5.dp, UltimoRed.copy(alpha = 0.7f), RoundedCornerShape(12.dp))
-                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                            .border(1.5.dp, UltimoRed.copy(alpha = 0.7f), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 12.dp, vertical = 6.dp)
                             .testTag("podium_pedestal_last"),
                         contentAlignment = Alignment.Center
                     ) {
@@ -215,7 +215,7 @@ fun PodiumDialog(
                         ) {
                             Text(
                                 text = "💀",
-                                fontSize = 18.sp
+                                fontSize = 16.sp
                             )
                             Column {
                                 Text(
@@ -235,20 +235,20 @@ fun PodiumDialog(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(14.dp))
 
                 // Return to Lobby Action Button
                 Button(
                     onClick = onReturnToLobby,
                     modifier = Modifier
                         .fillMaxWidth(0.8f)
-                        .height(48.dp)
+                        .height(44.dp)
                         .testTag("btn_return_to_lobby"),
                     colors = ButtonDefaults.buttonColors(
                         containerColor = AccentCyan,
                         contentColor = Color.Black
                     ),
-                    shape = RoundedCornerShape(14.dp)
+                    shape = RoundedCornerShape(12.dp)
                 ) {
                     Text(
                         text = "Return to Lobby",

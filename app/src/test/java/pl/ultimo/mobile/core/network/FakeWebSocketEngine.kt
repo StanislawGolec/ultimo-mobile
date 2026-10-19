@@ -29,7 +29,7 @@ class FakeWebSocketEngine : WebSocketEngine {
     var lastUsername: String? = null
     var lastRoomId: String? = null
     var lastAccessCode: String? = null
-    var isConnected: Boolean = false
+    var isConnected: Boolean = true
     var reconnectNowCalledCount: Int = 0
 
     override fun connect(url: String, username: String, roomId: String?, accessCode: String?) {
