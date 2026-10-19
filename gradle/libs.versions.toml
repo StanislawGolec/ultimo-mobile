@@ -19,6 +19,7 @@ turbine = "1.2.0"
 truth = "1.4.4"
 androidx-test-ext = "1.2.1"
 espresso = "3.6.1"
+robolectric = "4.13"
 
 [libraries]
 # AndroidX Core & Lifecycle
@@ -69,6 +70,7 @@ truth = { group = "com.google.truth", name = "truth", version.ref = "truth" }
 kotlinx-coroutines-test = { group = "org.jetbrains.kotlinx", name = "kotlinx-coroutines-test", version.ref = "coroutines" }
 androidx-test-ext-junit = { group = "androidx.test.ext", name = "junit", version.ref = "androidx-test-ext" }
 androidx-test-espresso-core = { group = "androidx.test.espresso", name = "espresso-core", version.ref = "espresso" }
+robolectric = { group = "org.robolectric", name = "robolectric", version.ref = "robolectric" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

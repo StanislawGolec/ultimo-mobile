@@ -10,6 +10,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
@@ -36,6 +37,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
@@ -100,6 +102,7 @@ fun GameRoute(
 
     GameTableScreen(
         roomId = uiState.roomId.ifBlank { roomId },
+        localPlayerName = uiState.localPlayerName,
         hand = uiState.hand,
         topCard = uiState.topCard,
         activeColor = uiState.activeColor,
@@ -110,6 +113,9 @@ fun GameRoute(
         connectionStatus = uiState.connectionStatus,
         isWildPickerVisible = uiState.isWildPickerVisible,
         isUltimoCallable = uiState.isUltimoCallable,
+        isHost = uiState.isHost,
+        totalPlayerCount = uiState.totalPlayerCount,
+        drawDeckCount = uiState.drawDeckCount,
         errorMessage = uiState.errorMessage,
         gameOverWinner = uiState.gameOverWinner,
         onPlayCard = { card ->
@@ -131,6 +137,18 @@ fun GameRoute(
         onDeclareUltimo = {
             viewModel.onIntent(GameUiIntent.DeclareUltimo)
         },
+        onStartMatch = {
+            viewModel.onIntent(GameUiIntent.StartMatch)
+        },
+        onKickPlayer = { target ->
+            viewModel.onIntent(GameUiIntent.KickPlayer(target))
+        },
+        onTransferHost = { target ->
+            viewModel.onIntent(GameUiIntent.TransferHost(target))
+        },
+        onReconnectNow = {
+            viewModel.onIntent(GameUiIntent.ReconnectNow)
+        },
         onLeaveRoom = {
             viewModel.onIntent(GameUiIntent.LeaveRoom)
             onNavigateBack()
@@ -142,11 +160,13 @@ fun GameRoute(
  * Stateless Game Table composable screen.
  *
  * Integrates opponent status indicators, turn countdown gauge, drag-and-drop table arena,
- * bottom fan-shaped hand carousel, reconnection notification banner, and dialog modals.
+ * bottom fan-shaped hand carousel, reconnection notification banner, host ownership controls,
+ * and dialog modals.
  */
 @Composable
 fun GameTableScreen(
     roomId: String = "room_1",
+    localPlayerName: String = "",
     hand: List<Card> = emptyList(),
     topCard: Card? = Card(CardColor.RED, CardValue.SEVEN),
     activeColor: CardColor = CardColor.RED,
@@ -157,6 +177,8 @@ fun GameTableScreen(
     connectionStatus: ConnectionStatus = ConnectionStatus.Connected,
     isWildPickerVisible: Boolean = false,
     isUltimoCallable: Boolean = false,
+    isHost: Boolean = false,
+    totalPlayerCount: Int = 1,
     drawDeckCount: Int = 32,
     errorMessage: String? = null,
     gameOverWinner: String? = null,
@@ -165,6 +187,10 @@ fun GameTableScreen(
     onDrawCard: () -> Unit = {},
     onPassTurn: () -> Unit = {},
     onDeclareUltimo: () -> Unit = {},
+    onStartMatch: () -> Unit = {},
+    onKickPlayer: (String) -> Unit = {},
+    onTransferHost: (String) -> Unit = {},
+    onReconnectNow: () -> Unit = {},
     onLeaveRoom: () -> Unit = {}
 ) {
     var dropTargetBounds by remember { mutableStateOf<Rect?>(null) }
@@ -215,12 +241,31 @@ fun GameTableScreen(
                         strokeWidth = 3.dp
                     )
                     Column {
-                        Text(
-                            text = "Room: $roomId",
-                            style = MaterialTheme.typography.titleMedium,
-                            color = TextPrimary,
-                            fontWeight = FontWeight.Bold
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "Room: $roomId",
+                                style = MaterialTheme.typography.titleMedium,
+                                color = TextPrimary,
+                                fontWeight = FontWeight.Bold
+                            )
+                            if (isHost) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Box(
+                                    modifier = Modifier
+                                        .background(UltimoYellow.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                                        .border(1.dp, UltimoYellow, RoundedCornerShape(4.dp))
+                                        .padding(horizontal = 6.dp, vertical = 2.dp)
+                                ) {
+                                    Text(
+                                        text = "👑 HOST",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = UltimoYellow,
+                                        fontWeight = FontWeight.ExtraBold,
+                                        fontSize = 10.sp
+                                    )
+                                }
+                            }
+                        }
                         Text(
                             text = if (isMyTurn) "YOUR TURN" else "$activePlayerName's Turn",
                             style = MaterialTheme.typography.labelSmall,
@@ -246,22 +291,39 @@ fun GameTableScreen(
                 exit = slideOutVertically() + fadeOut()
             ) {
                 val retrySec = (connectionStatus as? ConnectionStatus.Reconnecting)?.nextRetrySeconds ?: 3
-                Box(
+                Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .padding(top = 4.dp)
                         .background(StatusReconnecting.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
                         .border(1.dp, StatusReconnecting, RoundedCornerShape(8.dp))
                         .padding(horizontal = 12.dp, vertical = 6.dp),
-                    contentAlignment = Alignment.Center
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
                 ) {
                     Text(
-                        text = "Reconnecting to server (${retrySec}s)... Match state is preserved",
+                        text = "Connection Lost: Reconnecting in ${retrySec}s... (You have 2:00 to rejoin seat)",
                         style = MaterialTheme.typography.bodySmall,
                         color = StatusReconnecting,
                         fontWeight = FontWeight.Bold,
-                        fontSize = 11.sp
+                        fontSize = 11.sp,
+                        modifier = Modifier.weight(1f)
                     )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = onReconnectNow,
+                        colors = ButtonDefaults.buttonColors(containerColor = StatusReconnecting),
+                        shape = RoundedCornerShape(6.dp),
+                        contentPadding = PaddingValues(horizontal = 8.dp, vertical = 4.dp),
+                        modifier = Modifier.height(28.dp)
+                    ) {
+                        Text(
+                            text = "Reconnect Now",
+                            color = BackgroundDark,
+                            fontSize = 10.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
             }
 
@@ -276,9 +338,9 @@ fun GameTableScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(top = 4.dp)
-                        .background(UltimoRed.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
-                        .border(1.dp, UltimoRed, RoundedCornerShape(8.dp))
-                        .padding(horizontal = 12.dp, vertical = 6.dp),
+                            .background(UltimoRed.copy(alpha = 0.2f), RoundedCornerShape(8.dp))
+                            .border(1.dp, UltimoRed, RoundedCornerShape(8.dp))
+                            .padding(horizontal = 12.dp, vertical = 6.dp),
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
@@ -293,8 +355,14 @@ fun GameTableScreen(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            // Opponent status indicators
-            OpponentBar(opponents = opponents)
+            // Opponent status indicators with Host Kick & Transfer actions
+            OpponentBar(
+                opponents = opponents,
+                activePlayerName = activePlayerName,
+                isHost = isHost,
+                onKickPlayer = onKickPlayer,
+                onTransferHost = onTransferHost
+            )
         }
 
         // Center Table Area: Discard Pile & Draw Deck
@@ -308,7 +376,7 @@ fun GameTableScreen(
             }
         )
 
-        // Bottom Action Controls: Ultimo shout button, Pass button
+        // Bottom Action Controls: Ultimo shout button, Host Start Match button, Pass button
         Row(
             modifier = Modifier
                 .fillMaxWidth()
@@ -333,6 +401,22 @@ fun GameTableScreen(
                 )
             }
 
+            if (isHost && totalPlayerCount >= 2) {
+                Button(
+                    onClick = onStartMatch,
+                    colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
+                    shape = RoundedCornerShape(20.dp),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp)
+                ) {
+                    Text(
+                        text = "START MATCH ▶",
+                        color = BackgroundDark,
+                        fontWeight = FontWeight.ExtraBold,
+                        fontSize = 13.sp
+                    )
+                }
+            }
+
             OutlinedButton(
                 onClick = onPassTurn,
                 enabled = isMyTurn,
@@ -346,11 +430,70 @@ fun GameTableScreen(
             }
         }
 
-        // Bottom Hand Carousel
+        // Bottom Section: Local Player Avatar / Status & Hand Carousel
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            // Local player avatar & crown indicator
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp, vertical = 2.dp),
+                horizontalArrangement = Arrangement.Center,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(32.dp)
+                        .shadow(if (isMyTurn) 6.dp else 1.dp, CircleShape)
+                        .border(
+                            width = if (isMyTurn) 2.dp else 1.dp,
+                            color = if (isMyTurn) StatusConnected else SurfaceElevatedDark,
+                            shape = CircleShape
+                        )
+                        .clip(CircleShape)
+                        .background(SurfaceDark),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Text(
+                        text = localPlayerName.take(2).uppercase().ifEmpty { "ME" },
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (isMyTurn) AccentCyan else TextPrimary,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+
+                Spacer(modifier = Modifier.width(8.dp))
+
+                Text(
+                    text = localPlayerName.ifEmpty { "You" },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = TextPrimary,
+                    fontWeight = FontWeight.Bold
+                )
+
+                if (isHost) {
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Box(
+                        modifier = Modifier
+                            .background(UltimoYellow.copy(alpha = 0.2f), RoundedCornerShape(4.dp))
+                            .border(1.dp, UltimoYellow, RoundedCornerShape(4.dp))
+                            .padding(horizontal = 6.dp, vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = "👑 HOST",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = UltimoYellow,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(4.dp))
+
             HandCarousel(
                 hand = hand,
                 topCard = topCard,

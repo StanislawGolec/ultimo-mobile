@@ -13,7 +13,10 @@ data class UserPreferences(
     val soundEnabled: Boolean = true,
     val hapticsEnabled: Boolean = true,
     val autoDeclareUltimo: Boolean = false,
-    val savedPlayerHandle: String = "Player_1"
+    val savedPlayerHandle: String = "Player_1",
+    val isSfxEnabled: Boolean = soundEnabled,
+    val sfxVolume: Float = 0.8f,
+    val isHapticsEnabled: Boolean = hapticsEnabled
 ) {
     /**
      * Resolves the target WebSocket endpoint depending on whether chaos testing proxy is active.

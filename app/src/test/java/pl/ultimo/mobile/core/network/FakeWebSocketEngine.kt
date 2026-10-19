@@ -28,14 +28,24 @@ class FakeWebSocketEngine : WebSocketEngine {
     var lastConnectedUrl: String? = null
     var lastUsername: String? = null
     var lastRoomId: String? = null
+    var lastAccessCode: String? = null
     var isConnected: Boolean = false
+    var reconnectNowCalledCount: Int = 0
 
-    override fun connect(url: String, username: String, roomId: String?) {
+    override fun connect(url: String, username: String, roomId: String?, accessCode: String?) {
         lastConnectedUrl = url
         lastUsername = username
         lastRoomId = roomId
+        lastAccessCode = accessCode
         isConnected = true
         _connectionStatus.value = ConnectionStatus.Connected
+    }
+
+    override fun reconnectNow() {
+        reconnectNowCalledCount++
+        if (lastConnectedUrl != null && lastUsername != null) {
+            connect(lastConnectedUrl!!, lastUsername!!, lastRoomId, lastAccessCode)
+        }
     }
 
     override fun sendCommand(command: ClientCommand): Boolean {

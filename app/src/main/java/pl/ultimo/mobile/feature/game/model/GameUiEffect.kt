@@ -17,7 +17,9 @@ enum class SoundType {
     ULTIMO_SHOUT,
     VICTORY,
     DEFEAT,
-    ERROR
+    ERROR,
+    SHIELD_DEFLECT,
+    STACK_ACCUMULATE
 }
 
 enum class HapticType {

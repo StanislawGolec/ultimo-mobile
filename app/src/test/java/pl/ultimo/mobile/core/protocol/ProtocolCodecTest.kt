@@ -26,6 +26,26 @@ class ProtocolCodecTest {
     }
 
     @Test
+    fun encodeCommand_joinWithAccessCodeAndMaxPlayers_formatsCorrectly() {
+        val command = ClientCommand.Join("Charlie", "room_99", "PASS1", 16)
+        val wire = ProtocolCodec.encodeCommand(command)
+        assertThat(wire).isEqualTo("JOIN Charlie room_99 PASS1 16\n")
+
+        val decoded = ProtocolCodec.decodeClientCommand(wire)
+        assertThat(decoded).isEqualTo(command)
+    }
+
+    @Test
+    fun encodeCommand_joinWithMaxPlayersOnly_formatsWithPlaceholder() {
+        val command = ClientCommand.Join("Dave", "room_10", null, 8)
+        val wire = ProtocolCodec.encodeCommand(command)
+        assertThat(wire).isEqualTo("JOIN Dave room_10 - 8\n")
+
+        val decoded = ProtocolCodec.decodeClientCommand(wire)
+        assertThat(decoded).isEqualTo(command)
+    }
+
+    @Test
     fun encodeCommand_playStandardCard_formatsCorrectly() {
         val command = ClientCommand.Play(Card(CardColor.RED, CardValue.SEVEN))
         val wire = ProtocolCodec.encodeCommand(command)
@@ -385,5 +405,33 @@ class ProtocolCodecTest {
         assertThrows(ProtocolException::class.java) { ProtocolCodec.parseCard("INVALID") }
         assertThrows(ProtocolException::class.java) { ProtocolCodec.parseCard("PURPLE_FIVE") }
         assertThrows(ProtocolException::class.java) { ProtocolCodec.parseCard("RED_FIFTY") }
+    }
+
+    @Test
+    fun encodeAndDecode_playerFinished() {
+        val event = ServerEvent.PlayerFinished("Alice", 1)
+        val encoded = ProtocolCodec.encodeEvent(event)
+        assertThat(encoded).isEqualTo("PLAYER_FINISHED Alice 1\n")
+
+        val decoded = ProtocolCodec.decodeEvent("PLAYER_FINISHED Alice 1")
+        assertThat(decoded).isEqualTo(event)
+    }
+
+    @Test
+    fun encodeAndDecode_matchStandings() {
+        val standings = mapOf(1 to "Alice", 2 to "Bob", 3 to "Charlie", 4 to "David")
+        val event = ServerEvent.MatchStandings(standings)
+        val encoded = ProtocolCodec.encodeEvent(event)
+        assertThat(encoded).isEqualTo("MATCH_STANDINGS 1:Alice 2:Bob 3:Charlie 4:David\n")
+
+        val decoded = ProtocolCodec.decodeEvent("MATCH_STANDINGS 1:Alice 2:Bob 3:Charlie 4:David")
+        assertThat(decoded).isEqualTo(event)
+    }
+
+    @Test
+    fun decode_matchStandings_empty() {
+        val decoded = ProtocolCodec.decodeEvent("MATCH_STANDINGS -")
+        val standings = decoded as ServerEvent.MatchStandings
+        assertThat(standings.placements).isEmpty()
     }
 }

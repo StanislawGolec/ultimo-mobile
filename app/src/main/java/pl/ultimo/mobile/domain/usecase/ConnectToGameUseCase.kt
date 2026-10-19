@@ -8,8 +8,8 @@ class ConnectToGameUseCase @Inject constructor(
     private val webSocketEngine: WebSocketEngine,
     private val userPreferencesRepository: UserPreferencesRepository
 ) {
-    suspend operator fun invoke(url: String, username: String, roomId: String?) {
+    suspend operator fun invoke(url: String, username: String, roomId: String?, accessCode: String? = null) {
         userPreferencesRepository.updateSavedPlayerHandle(username)
-        webSocketEngine.connect(url, username, roomId)
+        webSocketEngine.connect(url, username, roomId, accessCode)
     }
 }

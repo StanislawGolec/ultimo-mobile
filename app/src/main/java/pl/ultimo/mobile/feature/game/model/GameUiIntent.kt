@@ -17,4 +17,10 @@ sealed interface GameUiIntent {
     data class SendChat(val message: String) : GameUiIntent
     data object DismissError : GameUiIntent
     data object LeaveRoom : GameUiIntent
+    data object ReconnectNow : GameUiIntent
+
+    // Host Ownership Controls
+    data object StartMatch : GameUiIntent
+    data class KickPlayer(val targetUsername: String) : GameUiIntent
+    data class TransferHost(val targetUsername: String) : GameUiIntent
 }

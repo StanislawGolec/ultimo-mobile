@@ -14,7 +14,9 @@ sealed interface ClientCommand {
 
     data class Join(
         val username: String,
-        val roomId: String? = null
+        val roomId: String? = null,
+        val accessCode: String? = null,
+        val maxPlayers: Int? = null
     ) : ClientCommand {
         override val type: CommandType = CommandType.JOIN
     }
@@ -70,5 +72,42 @@ sealed interface ClientCommand {
      */
     data object ChallengeWildFour : ClientCommand {
         override val type: CommandType = CommandType.CHALLENGE_WILD_FOUR
+    }
+
+    /**
+     * Creates a new game room with specified visibility, access code, and player capacity.
+     */
+    data class CreateRoom(
+        val name: String,
+        val visibility: String = "PUBLIC",
+        val accessCode: String? = null,
+        val capacity: Int = 4
+    ) : ClientCommand {
+        override val type: CommandType = CommandType.CREATE_ROOM
+    }
+
+    /**
+     * Queries the server for a list of active public rooms.
+     */
+    data object ListRooms : ClientCommand {
+        override val type: CommandType = CommandType.LIST_ROOMS
+    }
+
+    /**
+     * Host command to kick a target player from the active room.
+     */
+    data class Kick(
+        val targetUsername: String
+    ) : ClientCommand {
+        override val type: CommandType = CommandType.KICK
+    }
+
+    /**
+     * Host command to transfer host ownership of the room to another player.
+     */
+    data class TransferOwnership(
+        val targetUsername: String
+    ) : ClientCommand {
+        override val type: CommandType = CommandType.TRANSFER_OWNERSHIP
     }
 }

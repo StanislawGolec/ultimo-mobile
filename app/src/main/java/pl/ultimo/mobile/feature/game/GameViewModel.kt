@@ -21,6 +21,7 @@ import pl.ultimo.mobile.core.datastore.UserPreferencesRepository
 import pl.ultimo.mobile.core.model.Card
 import pl.ultimo.mobile.core.model.CardColor
 import pl.ultimo.mobile.core.network.WebSocketEngine
+import pl.ultimo.mobile.core.protocol.ClientCommand
 import pl.ultimo.mobile.core.protocol.ServerEvent
 import pl.ultimo.mobile.domain.usecase.DeclareUltimoUseCase
 import pl.ultimo.mobile.domain.usecase.DrawCardUseCase
@@ -98,7 +99,8 @@ class GameViewModel @Inject constructor(
                 val opponentList = event.playerNames
                     .filter { !it.equals(_uiState.value.localPlayerName, ignoreCase = true) }
                     .map { name -> OpponentUiModel(name = name) }
-                _uiState.update { it.copy(opponents = opponentList) }
+                val currentOwner = _uiState.value.roomOwnerUsername ?: event.playerNames.firstOrNull()
+                _uiState.update { it.copy(opponents = opponentList, roomOwnerUsername = currentOwner) }
             }
             is ServerEvent.HandUpdate -> {
                 _uiState.update { state ->
@@ -122,10 +124,12 @@ class GameViewModel @Inject constructor(
                 }
             }
             is ServerEvent.TurnAnnounced -> {
-                val isMyTurn = event.activePlayerName.equals(_uiState.value.localPlayerName, ignoreCase = true)
+                val isMyTurn = event.activePlayerName.isNotBlank() &&
+                        _uiState.value.localPlayerName.isNotBlank() &&
+                        event.activePlayerName.equals(_uiState.value.localPlayerName, ignoreCase = false)
                 _uiState.update { state ->
                     val updatedOpponents = state.opponents.map {
-                        it.copy(isCurrentTurn = it.name.equals(event.activePlayerName, ignoreCase = true))
+                        it.copy(isCurrentTurn = it.name.equals(event.activePlayerName, ignoreCase = false))
                     }
                     state.copy(
                         isMyTurn = isMyTurn,
@@ -146,7 +150,7 @@ class GameViewModel @Inject constructor(
                 _uiState.update { state ->
                     val updated = state.opponents.map { opp ->
                         if (opp.name.equals(event.opponentName, ignoreCase = true)) {
-                            opp.copy(cardCount = event.cardCount)
+                            opp.copy(cardCount = event.cardCount, isDisconnected = false)
                         } else {
                             opp
                         }
@@ -168,6 +172,26 @@ class GameViewModel @Inject constructor(
             is ServerEvent.ChatBroadcast -> {
                 if (event.message.contains("ULTIMO", ignoreCase = true)) {
                     emitEffect(GameUiEffect.PlaySound(SoundType.ULTIMO_SHOUT))
+                }
+                val lowerMsg = event.message.lowercase()
+                if (lowerMsg.contains("disconnected")) {
+                    _uiState.update { state ->
+                        val updated = state.opponents.map { opp ->
+                            if (event.message.contains(opp.name, ignoreCase = true) || event.sender.equals(opp.name, ignoreCase = true)) {
+                                opp.copy(isDisconnected = true, disconnectRemainingSeconds = 120)
+                            } else opp
+                        }
+                        state.copy(opponents = updated)
+                    }
+                } else if (lowerMsg.contains("reconnected") || lowerMsg.contains("rejoined")) {
+                    _uiState.update { state ->
+                        val updated = state.opponents.map { opp ->
+                            if (event.message.contains(opp.name, ignoreCase = true) || event.sender.equals(opp.name, ignoreCase = true)) {
+                                opp.copy(isDisconnected = false)
+                            } else opp
+                        }
+                        state.copy(opponents = updated)
+                    }
                 }
             }
             is ServerEvent.GameOver -> {
@@ -220,6 +244,18 @@ class GameViewModel @Inject constructor(
                 val msg = "Round won by ${event.roundWinner} (+${event.pointsEarned} pts)!"
                 _uiState.update { it.copy(errorMessage = msg) }
             }
+            is ServerEvent.RoomOwnerChanged -> {
+                _uiState.update { it.copy(roomOwnerUsername = event.newOwnerUsername) }
+            }
+            is ServerEvent.RoomList -> {
+                // Public rooms list handled in lobby
+            }
+            is ServerEvent.PlayerFinished -> {
+                // Handled in multi-player tournament standings
+            }
+            is ServerEvent.MatchStandings -> {
+                // Handled in multi-player tournament standings
+            }
         }
     }
 
@@ -269,6 +305,24 @@ class GameViewModel @Inject constructor(
             }
             GameUiIntent.LeaveRoom -> {
                 webSocketEngine.disconnect("Player exited room")
+            }
+            GameUiIntent.ReconnectNow -> {
+                webSocketEngine.reconnectNow()
+            }
+            GameUiIntent.StartMatch -> {
+                viewModelScope.launch {
+                    webSocketEngine.sendCommand(ClientCommand.Start)
+                }
+            }
+            is GameUiIntent.KickPlayer -> {
+                viewModelScope.launch {
+                    webSocketEngine.sendCommand(ClientCommand.Kick(intent.targetUsername))
+                }
+            }
+            is GameUiIntent.TransferHost -> {
+                viewModelScope.launch {
+                    webSocketEngine.sendCommand(ClientCommand.TransferOwnership(intent.targetUsername))
+                }
             }
         }
     }

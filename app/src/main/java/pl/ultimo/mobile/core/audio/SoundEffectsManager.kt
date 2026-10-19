@@ -117,6 +117,16 @@ class SoundEffectsManager @Inject constructor(
             generateWav(errorFile, durationMs = 120, frequencies = floatArrayOf(140f, 160f), isPercussive = true)
             soundMap[SoundType.ERROR] = soundPool.load(errorFile.absolutePath, 1)
 
+            // 8. SHIELD_DEFLECT: Crisp metallic deflection chime (1200Hz + 1800Hz snap, 160ms)
+            val shieldFile = File(cacheDir, "sfx_shield_deflect.wav")
+            generateWav(shieldFile, durationMs = 160, frequencies = floatArrayOf(1200f, 1800f), isPercussive = true)
+            soundMap[SoundType.SHIELD_DEFLECT] = soundPool.load(shieldFile.absolutePath, 1)
+
+            // 9. STACK_ACCUMULATE: Rising pitch alert harmonic stack (350Hz -> 520Hz -> 700Hz, 250ms)
+            val stackFile = File(cacheDir, "sfx_stack_accumulate.wav")
+            generateWav(stackFile, durationMs = 250, frequencies = floatArrayOf(350f, 520f, 700f), isPercussive = false)
+            soundMap[SoundType.STACK_ACCUMULATE] = soundPool.load(stackFile.absolutePath, 1)
+
         } catch (e: Exception) {
             // Audio synthesis fallback: non-fatal if file I/O is restricted
         }

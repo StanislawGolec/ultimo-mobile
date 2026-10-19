@@ -10,7 +10,22 @@ data class Card(
     val isWild: Boolean
         get() = color == CardColor.WILD || value.isWild
 
-    fun canPlayOn(topCard: Card?, activeColor: CardColor?): Boolean {
+    fun canPlayOn(
+        topCard: Card?,
+        activeColor: CardColor?,
+        pendingSkipDeflection: Boolean = false,
+        pendingDrawPenalty: Int = 0
+    ): Boolean {
+        if (pendingSkipDeflection) {
+            return value == CardValue.SKIP
+        }
+        if (pendingDrawPenalty > 0) {
+            return when (topCard?.value) {
+                CardValue.DRAW_TWO -> value == CardValue.DRAW_TWO || value == CardValue.WILD_DRAW_FOUR
+                CardValue.WILD_DRAW_FOUR -> value == CardValue.WILD_DRAW_FOUR
+                else -> value == CardValue.DRAW_TWO || value == CardValue.WILD_DRAW_FOUR
+            }
+        }
         if (topCard == null) return true
         if (isWild) return true
         val targetColor = activeColor ?: topCard.color

@@ -3,6 +3,7 @@ package pl.ultimo.mobile.core.protocol
 import pl.ultimo.mobile.core.model.Card
 import pl.ultimo.mobile.core.model.CardColor
 import pl.ultimo.mobile.core.model.CardValue
+import pl.ultimo.mobile.core.model.RoomInfo
 
 /**
  * Encodes and decodes line-based wire protocol messages between raw ASCII wire format
@@ -17,11 +18,21 @@ object ProtocolCodec {
     fun encodeCommand(command: ClientCommand): String {
         return when (command) {
             is ClientCommand.Join -> {
+                val sb = StringBuilder("JOIN ").append(command.username)
                 if (!command.roomId.isNullOrBlank()) {
-                    "JOIN ${command.username} ${command.roomId}\n"
-                } else {
-                    "JOIN ${command.username}\n"
+                    sb.append(" ").append(command.roomId)
+                    if (!command.accessCode.isNullOrBlank()) {
+                        sb.append(" ").append(command.accessCode)
+                        if (command.maxPlayers != null) {
+                            sb.append(" ").append(command.maxPlayers)
+                        }
+                    } else if (command.maxPlayers != null) {
+                        sb.append(" - ").append(command.maxPlayers)
+                    }
+                } else if (command.maxPlayers != null) {
+                    sb.append(" - - ").append(command.maxPlayers)
                 }
+                sb.append("\n").toString()
             }
             is ClientCommand.Play -> {
                 val cardsStr = command.cards.joinToString(",") { formatCard(it) }
@@ -40,6 +51,17 @@ object ProtocolCodec {
             ClientCommand.Ultimo -> "ULTIMO\n"
             is ClientCommand.CatchUltimo -> "CATCH_ULTIMO ${command.targetUsername}\n"
             ClientCommand.ChallengeWildFour -> "CHALLENGE_WILD_FOUR\n"
+            is ClientCommand.CreateRoom -> {
+                val sb = StringBuilder("CREATE_ROOM ").append(command.name).append(" ").append(command.visibility.uppercase())
+                if (!command.accessCode.isNullOrBlank()) {
+                    sb.append(" ").append(command.accessCode)
+                }
+                sb.append(" ").append(command.capacity)
+                sb.append("\n").toString()
+            }
+            ClientCommand.ListRooms -> "LIST_ROOMS\n"
+            is ClientCommand.Kick -> "KICK ${command.targetUsername}\n"
+            is ClientCommand.TransferOwnership -> "TRANSFER_OWNERSHIP ${command.targetUsername}\n"
         }
     }
 
@@ -59,8 +81,10 @@ object ProtocolCodec {
             "JOIN" -> {
                 if (parts.size < 2) throw ProtocolException("Malformed JOIN: $line")
                 val username = parts[1]
-                val roomId = if (parts.size > 2) parts[2] else null
-                ClientCommand.Join(username, roomId)
+                val roomId = if (parts.size > 2 && parts[2] != "-") parts[2] else null
+                val accessCode = if (parts.size > 3 && parts[3] != "-") parts[3] else null
+                val maxPlayers = if (parts.size > 4) parts[4].toIntOrNull() else null
+                ClientCommand.Join(username, roomId, accessCode, maxPlayers)
             }
             "PLAY" -> {
                 if (parts.size < 2) throw ProtocolException("Malformed PLAY: $line")
@@ -82,6 +106,53 @@ object ProtocolCodec {
                 ClientCommand.CatchUltimo(parts[1])
             }
             "CHALLENGE_WILD_FOUR" -> ClientCommand.ChallengeWildFour
+            "CREATE_ROOM" -> {
+                if (parts.size < 2) throw ProtocolException("Malformed CREATE_ROOM: $line")
+                var visIdx = -1
+                for (i in 1 until parts.size) {
+                    if (parts[i].equals("PUBLIC", ignoreCase = true) || parts[i].equals("PRIVATE", ignoreCase = true)) {
+                        visIdx = i
+                        break
+                    }
+                }
+                val name: String
+                val visibility: String
+                var accessCode: String? = null
+                var capacity = 4
+                if (visIdx != -1) {
+                    val nameStart = line.indexOf(' ') + 1
+                    val nameEnd = line.uppercase().indexOf(parts[visIdx].uppercase())
+                    name = line.substring(nameStart, nameEnd).trim()
+                    visibility = parts[visIdx].uppercase()
+                    var nextIdx = visIdx + 1
+                    if (visibility == "PRIVATE" && nextIdx < parts.size && parts[nextIdx].toIntOrNull() == null) {
+                        accessCode = parts[nextIdx++]
+                    }
+                    if (nextIdx < parts.size) {
+                        capacity = parts[nextIdx].toIntOrNull() ?: 4
+                    }
+                } else {
+                    name = parts[1]
+                    visibility = if (parts.size > 2) parts[2].uppercase() else "PUBLIC"
+                    if (visibility == "PRIVATE" && parts.size > 3 && parts[3].toIntOrNull() == null) {
+                        accessCode = parts[3]
+                        capacity = if (parts.size > 4) parts[4].toIntOrNull() ?: 4 else 4
+                    } else {
+                        capacity = if (parts.size > 3) parts[3].toIntOrNull() ?: 4 else 4
+                    }
+                }
+                if (name.isBlank()) throw ProtocolException("Room name must not be blank")
+                ClientCommand.CreateRoom(name, visibility, accessCode, capacity)
+            }
+            "LIST_ROOMS" -> ClientCommand.ListRooms
+            "KICK" -> {
+                if (parts.size < 2) throw ProtocolException("Malformed KICK: $line")
+                ClientCommand.Kick(parts[1])
+            }
+            "TRANSFER_OWNERSHIP" -> {
+                if (parts.size < 2) throw ProtocolException("Malformed TRANSFER_OWNERSHIP: $line")
+                ClientCommand.TransferOwnership(parts[1])
+            }
             else -> throw ProtocolException("Unknown client command opcode: $opcode")
         }
     }
@@ -127,15 +198,33 @@ object ProtocolCodec {
                 else event.tournamentScores.entries.joinToString(",") { "${it.key}:${it.value}" }
                 "ROUND_OVER ${event.roundWinner} ${event.pointsEarned} $status $scoreList\n"
             }
+            is ServerEvent.RoomOwnerChanged -> "ROOM_OWNER_CHANGED ${event.newOwnerUsername}\n"
+            is ServerEvent.RoomList -> {
+                if (event.rooms.isEmpty()) {
+                    "ROOM_LIST 0\n"
+                } else {
+                    val listStr = event.rooms.joinToString(" ") { r ->
+                        val hostPart = if (r.host.isNotBlank()) ":${r.host}" else ""
+                        "${r.roomId}:${r.name.replace(':', '_').replace(' ', '_')}:${r.currentPlayers}/${r.maxPlayers}:${r.status}$hostPart"
+                    }
+                    "ROOM_LIST ${event.rooms.size} $listStr\n"
+                }
+            }
+            is ServerEvent.PlayerFinished -> "PLAYER_FINISHED ${event.playerName} ${event.placementRank}\n"
+            is ServerEvent.MatchStandings -> {
+                if (event.placements.isEmpty()) {
+                    "MATCH_STANDINGS -\n"
+                } else {
+                    val listStr = event.placements.entries.sortedBy { it.key }
+                        .joinToString(" ") { "${it.key}:${it.value}" }
+                    "MATCH_STANDINGS $listStr\n"
+                }
+            }
         }
     }
 
     /**
      * Parses a raw line received from the server into a strongly-typed ServerEvent.
-     *
-     * @param rawLine line received from server (with or without trailing newline)
-     * @return parsed ServerEvent
-     * @throws ProtocolException if the line format is invalid or opcode is unknown
      */
     @Throws(ProtocolException::class)
     fun decodeEvent(rawLine: String?): ServerEvent {
@@ -305,6 +394,58 @@ object ProtocolCodec {
                         }
                     }
                     ServerEvent.RoundOver(winner, points, isWon, scores)
+                }
+                "ROOM_OWNER_CHANGED" -> {
+                    if (parts.size < 2) {
+                        throw ProtocolException("Malformed ROOM_OWNER_CHANGED event: $line")
+                    }
+                    ServerEvent.RoomOwnerChanged(parts[1])
+                }
+                "ROOM_LIST" -> {
+                    val rooms = mutableListOf<RoomInfo>()
+                    if (parts.size > 1 && parts[1] != "-") {
+                        val startIndex = if (parts[1].toIntOrNull() != null) 2 else 1
+                        for (i in startIndex until parts.size) {
+                            val token = parts[i]
+                            val segments = token.split(":")
+                            if (segments.size >= 3) {
+                                val roomId = segments[0]
+                                val name = segments[1].replace('_', ' ')
+                                val counts = segments[2].split("/")
+                                val current = counts.getOrNull(0)?.toIntOrNull() ?: 0
+                                val max = counts.getOrNull(1)?.toIntOrNull() ?: 4
+                                val status = if (segments.size > 3) segments[3] else "WAITING"
+                                val host = if (segments.size > 4) segments[4] else ""
+                                rooms.add(RoomInfo(roomId, name, current, max, status, host))
+                            } else if (segments.isNotEmpty() && segments[0].isNotBlank()) {
+                                rooms.add(RoomInfo(roomId = segments[0], name = segments[0]))
+                            }
+                        }
+                    }
+                    ServerEvent.RoomList(rooms)
+                }
+                "PLAYER_FINISHED" -> {
+                    if (parts.size < 3) {
+                        throw ProtocolException("Malformed PLAYER_FINISHED event: $line")
+                    }
+                    val playerName = parts[1]
+                    val rank = parts[2].toIntOrNull() ?: throw ProtocolException("Invalid rank in PLAYER_FINISHED: $line")
+                    ServerEvent.PlayerFinished(playerName, rank)
+                }
+                "MATCH_STANDINGS" -> {
+                    val placements = mutableMapOf<Int, String>()
+                    if (parts.size > 1 && parts[1] != "-") {
+                        for (i in 1 until parts.size) {
+                            val pair = parts[i].split(":")
+                            if (pair.size == 2) {
+                                val rank = pair[0].toIntOrNull()
+                                if (rank != null) {
+                                    placements[rank] = pair[1]
+                                }
+                            }
+                        }
+                    }
+                    ServerEvent.MatchStandings(placements)
                 }
                 else -> throw ProtocolException("Unknown server event: $eventName")
             }

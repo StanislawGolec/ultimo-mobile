@@ -7,7 +7,7 @@ import pl.ultimo.mobile.core.protocol.ServerEvent
 
 /**
  * Core interface managing persistent RFC 6455 WebSocket communication,
- * incoming event streaming, and outgoing command dispatch.
+ * incoming event streaming, outgoing command dispatch, and resilient session recovery.
  */
 interface WebSocketEngine {
 
@@ -17,9 +17,11 @@ interface WebSocketEngine {
 
     val errors: SharedFlow<String>
 
-    fun connect(url: String, username: String, roomId: String? = null)
+    fun connect(url: String, username: String, roomId: String? = null, accessCode: String? = null)
 
     fun sendCommand(command: ClientCommand): Boolean
 
     fun disconnect(reason: String = "Normal closure")
+
+    fun reconnectNow()
 }

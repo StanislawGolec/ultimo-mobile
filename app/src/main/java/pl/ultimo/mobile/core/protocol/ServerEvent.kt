@@ -3,6 +3,7 @@ package pl.ultimo.mobile.core.protocol
 import androidx.compose.runtime.Immutable
 import pl.ultimo.mobile.core.model.Card
 import pl.ultimo.mobile.core.model.CardColor
+import pl.ultimo.mobile.core.model.RoomInfo
 
 /**
  * Type-safe, sealed model representing all events emitted from the authoritative server to clients.
@@ -127,5 +128,30 @@ sealed interface ServerEvent {
         val tournamentScores: Map<String, Int> = emptyMap()
     ) : ServerEvent {
         override val type: EventType = EventType.ROUND_OVER
+    }
+
+    data class RoomOwnerChanged(
+        val newOwnerUsername: String
+    ) : ServerEvent {
+        override val type: EventType = EventType.ROOM_OWNER_CHANGED
+    }
+
+    data class RoomList(
+        val rooms: List<RoomInfo>
+    ) : ServerEvent {
+        override val type: EventType = EventType.ROOM_LIST
+    }
+
+    data class PlayerFinished(
+        val playerName: String,
+        val placementRank: Int
+    ) : ServerEvent {
+        override val type: EventType = EventType.PLAYER_FINISHED
+    }
+
+    data class MatchStandings(
+        val placements: Map<Int, String>
+    ) : ServerEvent {
+        override val type: EventType = EventType.MATCH_STANDINGS
     }
 }

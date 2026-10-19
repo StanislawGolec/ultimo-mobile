@@ -88,9 +88,13 @@ class GameViewModelTest {
         viewModel.uiState.test {
             val state = awaitItem()
             assertThat(state.roomId).isEqualTo("arena_99")
-            advanceUntilIdle()
-            val updatedState = expectMostRecentItem()
-            assertThat(updatedState.localPlayerName).isEqualTo("Hero")
+            if (state.localPlayerName != "Hero") {
+                advanceUntilIdle()
+                val updatedState = awaitItem()
+                assertThat(updatedState.localPlayerName).isEqualTo("Hero")
+            } else {
+                assertThat(state.localPlayerName).isEqualTo("Hero")
+            }
         }
     }
 
@@ -222,6 +226,9 @@ class GameViewModelTest {
 
     @Test
     fun intent_declareUltimo_sendsChatShoutCommand() = runTest(testDispatcher) {
+        fakeWebSocketEngine.emitEvent(ServerEvent.HandUpdate(listOf(Card(CardColor.RED, CardValue.SEVEN))))
+        advanceUntilIdle()
+
         viewModel.onIntent(GameUiIntent.DeclareUltimo)
         advanceUntilIdle()
 

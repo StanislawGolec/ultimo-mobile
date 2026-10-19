@@ -32,6 +32,7 @@ import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -40,12 +41,17 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import pl.ultimo.mobile.core.network.ConnectionStatus
+import pl.ultimo.mobile.feature.lobby.dialog.AccessCodeDialog
+import pl.ultimo.mobile.feature.lobby.dialog.CreateRoomDialog
+import pl.ultimo.mobile.feature.lobby.dialog.RoomBrowserDialog
 import pl.ultimo.mobile.feature.lobby.dialog.ServerConfigDialog
 import pl.ultimo.mobile.ui.theme.AccentCyan
 import pl.ultimo.mobile.ui.theme.StatusConnected
@@ -58,6 +64,7 @@ import pl.ultimo.mobile.ui.theme.TextMuted
 import pl.ultimo.mobile.ui.theme.TextPrimary
 import pl.ultimo.mobile.ui.theme.TextSecondary
 import pl.ultimo.mobile.ui.theme.UltimoBlue
+import pl.ultimo.mobile.ui.theme.UltimoRed
 import pl.ultimo.mobile.ui.theme.UltimoYellow
 
 @Composable
@@ -68,6 +75,13 @@ fun LobbyScreen(
 ) {
     val uiState by viewModel.uiState.collectAsState()
     var isConfigDialogOpen by remember { mutableStateOf(false) }
+    val handleFocusRequester = remember { FocusRequester() }
+
+    LaunchedEffect(uiState.nameTakenError) {
+        if (uiState.nameTakenError != null) {
+            handleFocusRequester.requestFocus()
+        }
+    }
 
     if (isConfigDialogOpen) {
         ServerConfigDialog(
@@ -79,6 +93,45 @@ fun LobbyScreen(
                 viewModel.onChaosProxyToggled(useChaos)
             },
             onDismissRequest = { isConfigDialogOpen = false }
+        )
+    }
+
+    if (uiState.isRoomBrowserOpen) {
+        RoomBrowserDialog(
+            rooms = uiState.activeRooms,
+            isRefreshing = uiState.isRefreshingRooms,
+            onRefresh = { viewModel.refreshRooms() },
+            onJoinRoom = { room ->
+                viewModel.requestJoinRoom(room) { joinedRoomId ->
+                    onJoinMatch(uiState.username, joinedRoomId)
+                }
+            },
+            onDismissRequest = { viewModel.closeRoomBrowser() }
+        )
+    }
+
+    if (uiState.isCreateRoomOpen) {
+        CreateRoomDialog(
+            initialRoomName = "Room_${System.currentTimeMillis() % 1000}",
+            onCreateRoom = { name, visibility, code, capacity ->
+                viewModel.createRoom(name, visibility, code, capacity) { createdRoomId ->
+                    onJoinMatch(uiState.username, createdRoomId)
+                }
+            },
+            onDismissRequest = { viewModel.closeCreateRoom() }
+        )
+    }
+
+    val pendingRoom = uiState.pendingPrivateRoom
+    if (pendingRoom != null) {
+        AccessCodeDialog(
+            roomName = pendingRoom.name,
+            onConfirmCode = { code ->
+                viewModel.joinRoom(pendingRoom.roomId, code) { joinedRoomId ->
+                    onJoinMatch(uiState.username, joinedRoomId)
+                }
+            },
+            onDismissRequest = { viewModel.dismissAccessCodeDialog() }
         )
     }
 
@@ -161,21 +214,50 @@ fun LobbyScreen(
 
                 Spacer(modifier = Modifier.height(16.dp))
 
+                val isHandleError = uiState.nameTakenError != null ||
+                        (uiState.username.isNotBlank() && !uiState.isUsernameValid)
+
                 OutlinedTextField(
                     value = uiState.username,
                     onValueChange = { viewModel.onUsernameChanged(it) },
                     label = { Text("Player Handle") },
                     singleLine = true,
-                    modifier = Modifier.fillMaxWidth(),
+                    isError = isHandleError,
+                    supportingText = {
+                        if (uiState.nameTakenError != null) {
+                            Text(
+                                text = uiState.nameTakenError ?: "",
+                                color = UltimoRed,
+                                style = MaterialTheme.typography.bodySmall,
+                                fontWeight = FontWeight.Bold
+                            )
+                        } else if (uiState.username.isNotBlank() && !uiState.isUsernameValid) {
+                            Text(
+                                text = uiState.validationErrorMessage ?: "2-24 chars, no spaces/newlines",
+                                color = UltimoRed,
+                                style = MaterialTheme.typography.bodySmall
+                            )
+                        } else {
+                            Text(
+                                text = "${uiState.username.length}/24 characters",
+                                color = TextMuted,
+                                style = MaterialTheme.typography.labelSmall
+                            )
+                        }
+                    },
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .focusRequester(handleFocusRequester),
                     colors = OutlinedTextFieldDefaults.colors(
                         focusedTextColor = TextPrimary,
                         unfocusedTextColor = TextPrimary,
-                        focusedBorderColor = UltimoBlue,
-                        unfocusedBorderColor = SurfaceContainerDark
+                        focusedBorderColor = if (isHandleError) UltimoRed else UltimoBlue,
+                        unfocusedBorderColor = if (isHandleError) UltimoRed else SurfaceContainerDark,
+                        errorBorderColor = UltimoRed
                     )
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(8.dp))
 
                 OutlinedTextField(
                     value = uiState.roomId,
@@ -191,7 +273,7 @@ fun LobbyScreen(
                     )
                 )
 
-                Spacer(modifier = Modifier.height(24.dp))
+                Spacer(modifier = Modifier.height(20.dp))
 
                 Button(
                     onClick = {
@@ -199,18 +281,66 @@ fun LobbyScreen(
                             onJoinMatch(uiState.username, room)
                         }
                     },
+                    enabled = uiState.isUsernameValid,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(52.dp),
                     shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = UltimoBlue)
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = UltimoBlue,
+                        disabledContainerColor = SurfaceElevatedDark
+                    )
                 ) {
                     Text(
                         text = "Join / Create Match",
                         style = MaterialTheme.typography.labelLarge,
-                        color = Color.White,
+                        color = if (uiState.isUsernameValid) Color.White else TextMuted,
                         fontWeight = FontWeight.Bold
                     )
+                }
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                // Discovery & Custom Room Creation Row
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(10.dp)
+                ) {
+                    Button(
+                        onClick = { viewModel.openRoomBrowser() },
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(46.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = SurfaceElevatedDark)
+                    ) {
+                        Text(
+                            text = "🔍 Browse Rooms",
+                            fontSize = 12.sp,
+                            color = AccentCyan,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
+
+                    Button(
+                        onClick = { viewModel.openCreateRoom() },
+                        enabled = uiState.isUsernameValid,
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(46.dp),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = ButtonDefaults.buttonColors(
+                            containerColor = SurfaceElevatedDark,
+                            disabledContainerColor = SurfaceDark
+                        )
+                    ) {
+                        Text(
+                            text = "➕ Custom Room",
+                            fontSize = 12.sp,
+                            color = if (uiState.isUsernameValid) UltimoYellow else TextMuted,
+                            fontWeight = FontWeight.Bold
+                        )
+                    }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
@@ -219,7 +349,7 @@ fun LobbyScreen(
                     onClick = onNavigateToHistory,
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(48.dp),
+                        .height(46.dp),
                     shape = RoundedCornerShape(12.dp),
                     colors = ButtonDefaults.outlinedButtonColors(contentColor = TextSecondary)
                 ) {

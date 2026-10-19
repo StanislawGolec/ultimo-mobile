@@ -51,9 +51,12 @@ class OkHttpWebSocketEngine @Inject constructor(
     private val reconnectAttempt = AtomicInteger(0)
     private val isManualDisconnect = AtomicBoolean(false)
 
+    // Cached session credentials for seamless re-binding within 120s grace period
     private val activeUrl = AtomicReference<String?>(null)
     private val activeUsername = AtomicReference<String?>(null)
     private val activeRoomId = AtomicReference<String?>(null)
+    private val activeAccessCode = AtomicReference<String?>(null)
+    private val disconnectTimestampMs = AtomicLong(0L)
 
     private var currentWebSocket: WebSocket? = null
     private var heartbeatJob: Job? = null
@@ -75,14 +78,21 @@ class OkHttpWebSocketEngine @Inject constructor(
         }
     }
 
-    override fun connect(url: String, username: String, roomId: String?) {
+    override fun connect(url: String, username: String, roomId: String?, accessCode: String?) {
         isManualDisconnect.set(false)
         reconnectAttempt.set(0)
+        disconnectTimestampMs.set(0L)
         activeUrl.set(url)
         activeUsername.set(username)
         activeRoomId.set(roomId)
+        activeAccessCode.set(accessCode)
 
         startConnection(url)
+    }
+
+    override fun reconnectNow() {
+        if (isManualDisconnect.get()) return
+        triggerReconnect(immediate = true)
     }
 
     private fun startConnection(url: String) {
@@ -104,12 +114,17 @@ class OkHttpWebSocketEngine @Inject constructor(
             override fun onOpen(webSocket: WebSocket, response: Response) {
                 _connectionStatus.value = ConnectionStatus.Connected
                 reconnectAttempt.set(0)
+                disconnectTimestampMs.set(0L)
                 lastMessageOrPongTime.set(System.currentTimeMillis())
 
-                // Automatic handshake: dispatch JOIN command upon connection/reconnection
+                // Automatic handshake: dispatch cached JOIN command upon connection/reconnection
                 val username = activeUsername.get()
                 if (!username.isNullOrBlank()) {
-                    val joinCommand = ClientCommand.Join(username, activeRoomId.get())
+                    val joinCommand = ClientCommand.Join(
+                        username = username,
+                        roomId = activeRoomId.get(),
+                        accessCode = activeAccessCode.get()
+                    )
                     val wire = ProtocolCodec.encodeCommand(joinCommand)
                     webSocket.send(wire)
                 }
@@ -142,6 +157,9 @@ class OkHttpWebSocketEngine @Inject constructor(
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) {
                 stopHeartbeatWatchdog()
                 if (!isManualDisconnect.get()) {
+                    if (disconnectTimestampMs.get() == 0L) {
+                        disconnectTimestampMs.set(System.currentTimeMillis())
+                    }
                     triggerReconnect(immediate = false)
                 } else {
                     _connectionStatus.value = ConnectionStatus.Disconnected
@@ -151,6 +169,9 @@ class OkHttpWebSocketEngine @Inject constructor(
             override fun onFailure(webSocket: WebSocket, t: Throwable, response: Response?) {
                 stopHeartbeatWatchdog()
                 if (!isManualDisconnect.get()) {
+                    if (disconnectTimestampMs.get() == 0L) {
+                        disconnectTimestampMs.set(System.currentTimeMillis())
+                    }
                     triggerReconnect(immediate = false)
                 } else {
                     _connectionStatus.value = ConnectionStatus.Failed(t.message ?: "Connection failure")
@@ -169,6 +190,7 @@ class OkHttpWebSocketEngine @Inject constructor(
 
     override fun disconnect(reason: String) {
         isManualDisconnect.set(true)
+        disconnectTimestampMs.set(0L)
         reconnectJob?.cancel()
         stopHeartbeatWatchdog()
         closeCurrentWebSocket(reason)
@@ -188,6 +210,14 @@ class OkHttpWebSocketEngine @Inject constructor(
         if (isManualDisconnect.get()) return
 
         val url = activeUrl.get() ?: return
+        val disconnectTime = disconnectTimestampMs.get()
+
+        // 120s Grace Period Watchdog
+        if (disconnectTime > 0L && !reconnectionPolicy.isWithinGracePeriod(disconnectTime)) {
+            _connectionStatus.value = ConnectionStatus.Failed("120s reconnect grace period expired")
+            return
+        }
+
         val attempt = reconnectAttempt.incrementAndGet()
 
         if (!reconnectionPolicy.canAttemptAgain(attempt)) {
@@ -203,6 +233,10 @@ class OkHttpWebSocketEngine @Inject constructor(
 
             // Countdown ticker for user UI
             for (remaining in totalSeconds downTo 1) {
+                if (disconnectTime > 0L && !reconnectionPolicy.isWithinGracePeriod(disconnectTime)) {
+                    _connectionStatus.value = ConnectionStatus.Failed("120s reconnect grace period expired")
+                    return@launch
+                }
                 _connectionStatus.value = ConnectionStatus.Reconnecting(attempt, remaining)
                 delay(1000L)
             }
@@ -232,6 +266,9 @@ class OkHttpWebSocketEngine @Inject constructor(
                 if (elapsed > 20_000L) {
                     // Socket is dead (no incoming traffic in 20s)
                     closeCurrentWebSocket("Heartbeat timeout")
+                    if (disconnectTimestampMs.get() == 0L) {
+                        disconnectTimestampMs.set(System.currentTimeMillis())
+                    }
                     triggerReconnect(immediate = false)
                     break
                 }
