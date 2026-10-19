@@ -4,7 +4,10 @@ import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.safeDrawing
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
@@ -19,6 +22,8 @@ import pl.ultimo.mobile.feature.history.HistoryScreen
 import pl.ultimo.mobile.feature.lobby.LobbyScreen
 import pl.ultimo.mobile.ui.theme.BackgroundDark
 import pl.ultimo.mobile.ui.theme.UltimoTheme
+import pl.ultimo.mobile.ui.theme.WindowSizeClass
+import pl.ultimo.mobile.ui.theme.calculateWindowSizeClass
 import javax.inject.Inject
 
 @AndroidEntryPoint
@@ -34,14 +39,18 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
         setContent {
+            val windowSizeClass = calculateWindowSizeClass(this)
             UltimoTheme {
                 Surface(
-                    modifier = Modifier.fillMaxSize(),
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .windowInsetsPadding(WindowInsets.safeDrawing),
                     color = BackgroundDark
                 ) {
                     UltimoAppNavHost(
                         soundManager = soundManager,
-                        hapticManager = hapticManager
+                        hapticManager = hapticManager,
+                        windowSizeClass = windowSizeClass
                     )
                 }
             }
@@ -57,7 +66,8 @@ class MainActivity : ComponentActivity() {
 @Composable
 fun UltimoAppNavHost(
     soundManager: SoundEffectsManager,
-    hapticManager: HapticFeedbackManager
+    hapticManager: HapticFeedbackManager,
+    windowSizeClass: WindowSizeClass = calculateWindowSizeClass()
 ) {
     val navController = rememberNavController()
 
@@ -81,6 +91,7 @@ fun UltimoAppNavHost(
                 roomId = roomId,
                 soundManager = soundManager,
                 hapticManager = hapticManager,
+                windowWidthSizeClass = windowSizeClass.widthSizeClass,
                 onNavigateBack = {
                     navController.popBackStack()
                 }

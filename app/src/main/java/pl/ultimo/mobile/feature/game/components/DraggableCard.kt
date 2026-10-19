@@ -47,6 +47,8 @@ fun DraggableCard(
     initialRotation: Float = 0f,
     baseVerticalOffset: Dp = 0.dp,
     isSelected: Boolean = false,
+    cardWidth: Dp = 80.dp,
+    cardHeight: Dp = 120.dp,
     dropTargetBounds: Rect? = null,
     onCardPlayed: (Card) -> Unit = {},
     onCardClicked: (Card) -> Unit = {}
@@ -233,6 +235,8 @@ fun DraggableCard(
         CardView(
             card = card,
             isPlayable = isPlayable,
+            cardWidth = cardWidth,
+            cardHeight = cardHeight,
             elevation = 0.dp // Shadow handled in graphicsLayer for 60FPS optimization
         )
     }

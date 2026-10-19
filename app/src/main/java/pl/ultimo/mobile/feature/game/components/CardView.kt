@@ -72,6 +72,8 @@ fun CardView(
     isFaceDown: Boolean = false,
     isPlayable: Boolean = false,
     elevation: Dp = 4.dp,
+    cardWidth: Dp = 80.dp,
+    cardHeight: Dp = 120.dp,
     onClick: (() -> Unit)? = null
 ) {
     val cardShape = remember { RoundedCornerShape(10.dp) }
@@ -99,7 +101,7 @@ fun CardView(
 
     Box(
         modifier = modifier
-            .size(width = 80.dp, height = 120.dp)
+            .size(width = cardWidth, height = cardHeight)
             .shadow(
                 elevation = if (isPlayable) elevation + 4.dp else elevation,
                 shape = cardShape,

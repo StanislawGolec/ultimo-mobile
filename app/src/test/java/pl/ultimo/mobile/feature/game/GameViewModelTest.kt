@@ -250,4 +250,116 @@ class GameViewModelTest {
             assertThat(state.gameOverWinner).isEqualTo("Hero")
         }
     }
+
+    @Test
+    fun serverEvent_roomList_updatesAvailableRoomsInState() = runTest(testDispatcher) {
+        viewModel.uiState.test {
+            awaitItem()
+
+            val rooms = listOf(
+                pl.ultimo.mobile.core.model.RoomInfo(
+                    roomId = "arena_1",
+                    name = "Pro Arena",
+                    currentPlayers = 3,
+                    maxPlayers = 4,
+                    status = "WAITING",
+                    host = "Hero"
+                )
+            )
+            fakeWebSocketEngine.emitEvent(ServerEvent.RoomList(rooms))
+            advanceUntilIdle()
+
+            val state = expectMostRecentItem()
+            assertThat(state.availableRooms).hasSize(1)
+            assertThat(state.availableRooms.first().roomId).isEqualTo("arena_1")
+            assertThat(state.availableRooms.first().host).isEqualTo("Hero")
+        }
+    }
+
+    @Test
+    fun serverEvent_roomOwnerChanged_updatesHostOwnershipFlag() = runTest(testDispatcher) {
+        viewModel.uiState.test {
+            awaitItem()
+            advanceUntilIdle() // localPlayerName = "Hero"
+
+            // Initially another player is owner
+            fakeWebSocketEngine.emitEvent(ServerEvent.RoomOwnerChanged(newOwnerUsername = "Bob"))
+            advanceUntilIdle()
+
+            var state = expectMostRecentItem()
+            assertThat(state.roomOwnerUsername).isEqualTo("Bob")
+            assertThat(state.isHost).isFalse()
+
+            // Ownership transfers to Hero
+            fakeWebSocketEngine.emitEvent(ServerEvent.RoomOwnerChanged(newOwnerUsername = "Hero"))
+            advanceUntilIdle()
+
+            state = expectMostRecentItem()
+            assertThat(state.roomOwnerUsername).isEqualTo("Hero")
+            assertThat(state.isHost).isTrue()
+        }
+    }
+
+    @Test
+    fun serverEvent_playerFinished_transitionsLocalPlayerToSpectatingAndZeroesOpponentCards() = runTest(testDispatcher) {
+        viewModel.uiState.test {
+            awaitItem()
+            advanceUntilIdle() // localPlayerName = "Hero"
+
+            fakeWebSocketEngine.emitEvent(ServerEvent.OpponentUpdate("Bob", 2))
+            advanceUntilIdle()
+
+            // Opponent finishes 1st
+            fakeWebSocketEngine.emitEvent(ServerEvent.PlayerFinished(playerName = "Bob", placementRank = 1))
+            advanceUntilIdle()
+
+            var state = expectMostRecentItem()
+            assertThat(state.opponents.first { it.name == "Bob" }.cardCount).isEqualTo(0)
+            assertThat(state.isSpectating).isFalse()
+
+            // Local player finishes 2nd
+            fakeWebSocketEngine.emitEvent(ServerEvent.PlayerFinished(playerName = "Hero", placementRank = 2))
+            advanceUntilIdle()
+
+            state = expectMostRecentItem()
+            assertThat(state.isSpectating).isTrue()
+            assertThat(state.myPlacementRank).isEqualTo(2)
+        }
+    }
+
+    @Test
+    fun serverEvent_matchStandings_populatesPodiumAndShowsModal() = runTest(testDispatcher) {
+        viewModel.uiState.test {
+            awaitItem()
+            advanceUntilIdle()
+
+            val standings = mapOf(1 to "Hero", 2 to "Bob", 3 to "Charlie", 4 to "Dave")
+            fakeWebSocketEngine.emitEvent(ServerEvent.MatchStandings(standings))
+            advanceUntilIdle()
+
+            val state = expectMostRecentItem()
+            assertThat(state.isPodiumVisible).isTrue()
+            assertThat(state.podiumStandings).isEqualTo(standings)
+        }
+    }
+
+    @Test
+    fun serverEvent_ultimoPenalty_emitsPenaltyMessageInState() = runTest(testDispatcher) {
+        viewModel.uiState.test {
+            awaitItem()
+            advanceUntilIdle()
+
+            fakeWebSocketEngine.emitEvent(
+                ServerEvent.UltimoPenalty(
+                    penalizedPlayer = "Bob",
+                    challenger = "Hero",
+                    penaltyCards = 6
+                )
+            )
+            advanceUntilIdle()
+
+            val state = expectMostRecentItem()
+            assertThat(state.errorMessage).contains("Bob penalized 6 cards by Hero")
+        }
+    }
 }

@@ -13,18 +13,23 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Button
@@ -49,7 +54,9 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -85,6 +92,8 @@ import pl.ultimo.mobile.ui.theme.TextSecondary
 import pl.ultimo.mobile.ui.theme.UltimoBlue
 import pl.ultimo.mobile.ui.theme.UltimoRed
 import pl.ultimo.mobile.ui.theme.UltimoYellow
+import pl.ultimo.mobile.ui.theme.WindowWidthSizeClass
+import pl.ultimo.mobile.ui.theme.calculateWindowSizeClass
 
 /**
  * Stateful GameRoute container wiring [GameViewModel] state flows and single-shot effects
@@ -96,6 +105,7 @@ fun GameRoute(
     viewModel: GameViewModel = hiltViewModel(),
     soundManager: SoundEffectsManager? = null,
     hapticManager: HapticFeedbackManager? = null,
+    windowWidthSizeClass: WindowWidthSizeClass = calculateWindowSizeClass().widthSizeClass,
     onNavigateBack: () -> Unit = {}
 ) {
     val uiState by viewModel.uiState.collectAsState()
@@ -138,6 +148,7 @@ fun GameRoute(
         podiumStandings = uiState.podiumStandings,
         errorMessage = uiState.errorMessage,
         gameOverWinner = uiState.gameOverWinner,
+        windowWidthSizeClass = windowWidthSizeClass,
         onPlayCard = { card ->
             if (card.isWild) {
                 viewModel.onIntent(GameUiIntent.CardClicked(card))
@@ -190,7 +201,8 @@ fun GameRoute(
  *
  * Integrates opponent status indicators, turn countdown gauge, tactical defense HUD banner,
  * drag-and-drop table arena, bottom fan-shaped hand carousel (or spectator bar),
- * reconnection notification banner, host ownership controls, and dialog modals.
+ * reconnection notification banner, host ownership controls, dialog modals,
+ * and Stage 14 WindowWidthSizeClass adaptive layouts (Compact, Medium, Expanded).
  */
 @Composable
 fun GameTableScreen(
@@ -219,6 +231,7 @@ fun GameTableScreen(
     podiumStandings: Map<Int, String> = emptyMap(),
     errorMessage: String? = null,
     gameOverWinner: String? = null,
+    windowWidthSizeClass: WindowWidthSizeClass = calculateWindowSizeClass().widthSizeClass,
     onPlayCard: (Card) -> Unit = {},
     onWildColorSelected: (CardColor) -> Unit = {},
     onDrawCard: () -> Unit = {},
@@ -231,9 +244,12 @@ fun GameTableScreen(
     onKickPlayer: (String) -> Unit = {},
     onTransferHost: (String) -> Unit = {},
     onReconnectNow: () -> Unit = {},
+    onCopyRoomCode: (String) -> Unit = {},
     onLeaveRoom: () -> Unit = {}
 ) {
     var dropTargetBounds by remember { mutableStateOf<Rect?>(null) }
+    var isRoomCopied by remember { mutableStateOf(false) }
+    val clipboardManager = LocalClipboardManager.current
 
     // 1. Wild Color Picker Dialog
     if (isWildPickerVisible) {
@@ -257,20 +273,12 @@ fun GameTableScreen(
         )
     }
 
-    Column(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(BackgroundDark)
-            .padding(vertical = 8.dp, horizontal = 12.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.SpaceBetween
-    ) {
-        // Top Section: Header, Reconnection Banner, Opponent Bar, Defense HUD
+    val topHeaderAndHudSection: @Composable () -> Unit = {
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // Room Title & Header Bar
+            // Room Title, Copy Action & Header Bar
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
@@ -293,8 +301,31 @@ fun GameTableScreen(
                                 text = "Room: $roomId",
                                 style = MaterialTheme.typography.titleMedium,
                                 color = TextPrimary,
-                                fontWeight = FontWeight.Bold
+                                fontWeight = FontWeight.Bold,
+                                modifier = Modifier.testTag("room_code_header")
                             )
+                            Spacer(modifier = Modifier.width(6.dp))
+                            Box(
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(6.dp))
+                                    .background(SurfaceElevatedDark)
+                                    .border(1.dp, AccentCyan.copy(alpha = 0.6f), RoundedCornerShape(6.dp))
+                                    .clickable {
+                                        clipboardManager.setText(AnnotatedString(roomId))
+                                        isRoomCopied = true
+                                        onCopyRoomCode(roomId)
+                                    }
+                                    .padding(horizontal = 6.dp, vertical = 2.dp)
+                                    .testTag("btn_copy_room_code")
+                            ) {
+                                Text(
+                                    text = if (isRoomCopied) "✓ Copied!" else "📋 Copy",
+                                    style = MaterialTheme.typography.labelSmall,
+                                    color = AccentCyan,
+                                    fontWeight = FontWeight.Bold,
+                                    fontSize = 10.sp
+                                )
+                            }
                             if (isHost) {
                                 Spacer(modifier = Modifier.width(6.dp))
                                 Box(
@@ -421,8 +452,9 @@ fun GameTableScreen(
                 onDismissAutoPass = onDismissAutoPass
             )
         }
+    }
 
-        // Center Table Area: Discard Pile & Draw Deck
+    val centerTableSection: @Composable () -> Unit = {
         TableCenterView(
             topCard = topCard,
             activeColor = activeColor,
@@ -433,8 +465,9 @@ fun GameTableScreen(
                 dropTargetBounds = bounds
             }
         )
+    }
 
-        // Bottom Action Controls: Animated Golden Starburst ULTIMO Shout button, Host Start Match, Pass button
+    val bottomControlsAndHandSection: @Composable () -> Unit = {
         val canShoutUltimo = isShoutUltimoVisible || isUltimoCallable || (hand.size in 1..2 && !isSpectating)
         val starburstPulse = rememberInfiniteTransition(label = "StarburstPulse")
         val starburstScale by starburstPulse.animateFloat(
@@ -447,68 +480,69 @@ fun GameTableScreen(
             label = "StarburstScale"
         )
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 16.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Button(
-                onClick = onDeclareUltimo,
-                enabled = canShoutUltimo,
-                modifier = Modifier
-                    .scale(if (canShoutUltimo) starburstScale else 1f)
-                    .testTag("btn_shout_ultimo"),
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = Color(0xFFFFD700),
-                    disabledContainerColor = SurfaceDark
-                ),
-                shape = RoundedCornerShape(20.dp),
-                elevation = ButtonDefaults.buttonElevation(defaultElevation = if (canShoutUltimo) 8.dp else 0.dp)
-            ) {
-                Text(
-                    text = if (canShoutUltimo) "★ SHOUT ULTIMO! ★" else "ULTIMO!",
-                    color = if (canShoutUltimo) BackgroundDark else TextMuted,
-                    fontWeight = FontWeight.Black,
-                    fontSize = 13.sp
-                )
-            }
-
-            if (isHost && totalPlayerCount >= 2) {
-                Button(
-                    onClick = onStartMatch,
-                    colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
-                    shape = RoundedCornerShape(20.dp),
-                    elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp)
-                ) {
-                    Text(
-                        text = "START MATCH ▶",
-                        color = BackgroundDark,
-                        fontWeight = FontWeight.ExtraBold,
-                        fontSize = 13.sp
-                    )
-                }
-            }
-
-            OutlinedButton(
-                onClick = onPassTurn,
-                enabled = isMyTurn && !isSpectating,
-                shape = RoundedCornerShape(20.dp),
-                colors = ButtonDefaults.outlinedButtonColors(
-                    contentColor = AccentCyan,
-                    disabledContentColor = TextMuted
-                )
-            ) {
-                Text("Pass Turn", fontSize = 13.sp)
-            }
-        }
-
-        // Bottom Section: Local Player Avatar / Status & Hand Carousel (or Spectator Mode Bar)
         Column(
             modifier = Modifier.fillMaxWidth(),
             horizontalAlignment = Alignment.CenterHorizontally
         ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(horizontal = 16.dp),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(
+                    onClick = onDeclareUltimo,
+                    enabled = canShoutUltimo,
+                    modifier = Modifier
+                        .scale(if (canShoutUltimo) starburstScale else 1f)
+                        .testTag("btn_shout_ultimo"),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = Color(0xFFFFD700),
+                        disabledContainerColor = SurfaceDark
+                    ),
+                    shape = RoundedCornerShape(20.dp),
+                    elevation = ButtonDefaults.buttonElevation(defaultElevation = if (canShoutUltimo) 8.dp else 0.dp)
+                ) {
+                    Text(
+                        text = if (canShoutUltimo) "★ SHOUT ULTIMO! ★" else "ULTIMO!",
+                        color = if (canShoutUltimo) BackgroundDark else TextMuted,
+                        fontWeight = FontWeight.Black,
+                        fontSize = 13.sp
+                    )
+                }
+
+                if (isHost && totalPlayerCount >= 2) {
+                    Button(
+                        onClick = onStartMatch,
+                        colors = ButtonDefaults.buttonColors(containerColor = AccentCyan),
+                        shape = RoundedCornerShape(20.dp),
+                        elevation = ButtonDefaults.buttonElevation(defaultElevation = 6.dp)
+                    ) {
+                        Text(
+                            text = "START MATCH ▶",
+                            color = BackgroundDark,
+                            fontWeight = FontWeight.ExtraBold,
+                            fontSize = 13.sp
+                        )
+                    }
+                }
+
+                OutlinedButton(
+                    onClick = onPassTurn,
+                    enabled = isMyTurn && !isSpectating,
+                    shape = RoundedCornerShape(20.dp),
+                    colors = ButtonDefaults.outlinedButtonColors(
+                        contentColor = AccentCyan,
+                        disabledContentColor = TextMuted
+                    )
+                ) {
+                    Text("Pass Turn", fontSize = 13.sp)
+                }
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
             // Local player avatar & crown indicator
             Row(
                 modifier = Modifier
@@ -628,6 +662,81 @@ fun GameTableScreen(
                     dropTargetBounds = dropTargetBounds,
                     onPlayCard = onPlayCard
                 )
+            }
+        }
+    }
+
+    // Stage 14: Responsive WindowSizeClass Orchestration
+    when (windowWidthSizeClass) {
+        WindowWidthSizeClass.Expanded -> {
+            // Dual-column layout for Tablets (>840dp), Desktop DeX, and Ultrawide displays
+            Row(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(BackgroundDark)
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(vertical = 12.dp, horizontal = 20.dp)
+                    .testTag("layout_expanded"),
+                horizontalArrangement = Arrangement.spacedBy(24.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .testTag("expanded_left_column"),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.SpaceBetween
+                ) {
+                    topHeaderAndHudSection()
+                    centerTableSection()
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+
+                Column(
+                    modifier = Modifier
+                        .weight(1f)
+                        .fillMaxHeight()
+                        .testTag("expanded_right_column"),
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                    verticalArrangement = Arrangement.Center
+                ) {
+                    bottomControlsAndHandSection()
+                }
+            }
+        }
+        WindowWidthSizeClass.Medium -> {
+            // Foldable / Small Tablet layout (600-840dp) with wider spacing
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(BackgroundDark)
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(vertical = 12.dp, horizontal = 24.dp)
+                    .testTag("layout_medium"),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                topHeaderAndHudSection()
+                centerTableSection()
+                bottomControlsAndHandSection()
+            }
+        }
+        WindowWidthSizeClass.Compact -> {
+            // Standard Phone layout (<600dp)
+            Column(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(BackgroundDark)
+                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .padding(vertical = 8.dp, horizontal = 12.dp)
+                    .testTag("layout_compact"),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.SpaceBetween
+            ) {
+                topHeaderAndHudSection()
+                centerTableSection()
+                bottomControlsAndHandSection()
             }
         }
     }

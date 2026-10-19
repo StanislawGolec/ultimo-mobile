@@ -291,7 +291,7 @@ class GameViewModel @Inject constructor(
                 _uiState.update { it.copy(roomOwnerUsername = event.newOwnerUsername) }
             }
             is ServerEvent.RoomList -> {
-                // Public rooms list handled in lobby
+                _uiState.update { it.copy(availableRooms = event.rooms) }
             }
             is ServerEvent.PlayerFinished -> {
                 val isMe = event.playerName.equals(_uiState.value.localPlayerName, ignoreCase = true)

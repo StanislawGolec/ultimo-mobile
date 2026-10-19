@@ -71,7 +71,6 @@ fun HandCarousel(
     }
 
     var selectedCardId by remember { mutableStateOf<String?>(null) }
-    val cardWidth = 80.dp
     val handCount = hand.size
     val isDefenseActive = pendingSkipDeflection || pendingDrawPenalty > 0
 
@@ -82,6 +81,9 @@ fun HandCarousel(
             .padding(horizontal = 8.dp)
     ) {
         val availableWidth = maxWidth
+        val handSize = hand.size
+        val cardWidth = (maxWidth / (handSize.coerceAtLeast(7) + 2)).coerceIn(60.dp, 120.dp)
+        val cardHeight = cardWidth * 1.5f
         val centerIndex = (handCount - 1) / 2.0f
 
         // Calculate responsive horizontal spacing between cards
@@ -89,7 +91,7 @@ fun HandCarousel(
             0.dp
         } else {
             val naturalSpacing = (availableWidth - cardWidth - 16.dp) / (handCount - 1)
-            naturalSpacing.coerceIn(24.dp, 56.dp)
+            naturalSpacing.coerceIn(24.dp, 68.dp)
         }
 
         val totalWidth = if (handCount <= 1) cardWidth else (spacing * (handCount - 1) + cardWidth)
@@ -146,6 +148,8 @@ fun HandCarousel(
                     initialRotation = rotationAngle,
                     baseVerticalOffset = archOffsetDp + 24.dp,
                     isSelected = isSelected && !isDimmed,
+                    cardWidth = cardWidth,
+                    cardHeight = cardHeight,
                     dropTargetBounds = dropTargetBounds,
                     modifier = Modifier
                         .offset(x = cardX)

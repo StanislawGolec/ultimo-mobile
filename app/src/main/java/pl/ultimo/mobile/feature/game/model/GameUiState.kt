@@ -3,6 +3,7 @@ package pl.ultimo.mobile.feature.game.model
 import androidx.compose.runtime.Immutable
 import pl.ultimo.mobile.core.model.Card
 import pl.ultimo.mobile.core.model.CardColor
+import pl.ultimo.mobile.core.model.RoomInfo
 import pl.ultimo.mobile.core.network.ConnectionStatus
 
 @Immutable
@@ -34,6 +35,7 @@ data class GameUiState(
     val gameOverWinner: String? = null,
     val cardsPlayedCount: Int = 0,
     val roomOwnerUsername: String? = null,
+    val availableRooms: List<RoomInfo> = emptyList(),
     val pendingSkipDeflection: Boolean = false,
     val pendingDrawPenalty: Int = 0,
     val autoPassNotice: String? = null,
