@@ -65,14 +65,14 @@ class OpponentBarSemanticsTest {
             OpponentUiModel(
                 name = if (index == 1) "AlexanderGreat" else "Player$index",
                 cardCount = index % 7 + 1,
-                isCurrentTurn = index == 2
+                isCurrentTurn = index == 1
             )
         }
 
         composeTestRule.setContent {
             OpponentBar(
                 opponents = opponents,
-                activePlayerName = "Player2"
+                activePlayerName = "AlexanderGreat"
             )
         }
 
@@ -83,6 +83,30 @@ class OpponentBarSemanticsTest {
         // Truncated handle (max 8 chars: "AlexanderGreat" -> "Alexande")
         composeTestRule.onNodeWithText("Alexande").assertIsDisplayed()
         composeTestRule.onNodeWithText("Player2").assertIsDisplayed()
+    }
+
+    @Test
+    fun opponentBar_autoScrollsToActiveTurnPlayer_in15OpponentCarousel() {
+        val opponents = (1..15).map { index ->
+            OpponentUiModel(
+                name = "Player$index",
+                cardCount = 5,
+                isCurrentTurn = index == 15
+            )
+        }
+
+        composeTestRule.setContent {
+            OpponentBar(
+                opponents = opponents,
+                activePlayerName = "Player15"
+            )
+        }
+
+        composeTestRule.waitForIdle()
+
+        // Player15 at the end of the 15-opponent carousel must be auto-scrolled into viewport
+        composeTestRule.onNodeWithTag("opponent_chip_Player15").assertIsDisplayed()
+        composeTestRule.onNodeWithText("Player15").assertIsDisplayed()
     }
 
     @Test

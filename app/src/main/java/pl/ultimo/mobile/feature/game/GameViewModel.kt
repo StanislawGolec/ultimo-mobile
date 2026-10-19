@@ -150,16 +150,27 @@ class GameViewModel @Inject constructor(
             }
             is ServerEvent.OpponentUpdate -> {
                 _uiState.update { state ->
-                    val updated = state.opponents.map { opp ->
-                        if (opp.name.equals(event.opponentName, ignoreCase = true)) {
-                            opp.copy(
-                                cardCount = event.cardCount,
-                                isDisconnected = false,
-                                hasDeclaredUltimo = if (event.cardCount > 1) false else opp.hasDeclaredUltimo
-                            )
-                        } else {
-                            opp
+                    val exists = state.opponents.any { it.name.equals(event.opponentName, ignoreCase = true) }
+                    val updated = if (exists) {
+                        state.opponents.map { opp ->
+                            if (opp.name.equals(event.opponentName, ignoreCase = true)) {
+                                opp.copy(
+                                    cardCount = event.cardCount,
+                                    isDisconnected = false,
+                                    hasDeclaredUltimo = if (event.cardCount > 1) false else opp.hasDeclaredUltimo
+                                )
+                            } else {
+                                opp
+                            }
                         }
+                    } else if (!event.opponentName.equals(state.localPlayerName, ignoreCase = true)) {
+                        state.opponents + OpponentUiModel(
+                            name = event.opponentName,
+                            cardCount = event.cardCount,
+                            isCurrentTurn = state.activePlayerName.equals(event.opponentName, ignoreCase = true)
+                        )
+                    } else {
+                        state.opponents
                     }
                     state.copy(opponents = updated)
                 }
