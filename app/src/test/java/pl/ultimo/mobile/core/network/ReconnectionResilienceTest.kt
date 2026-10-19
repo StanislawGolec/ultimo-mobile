@@ -209,12 +209,10 @@ class ReconnectionResilienceTest {
             ServerEvent.TurnAnnounced("Opponent1", 28000L)
         )
         fakeWebSocketEngine.emitEvent(
-            ServerEvent.OpponentUpdate(
-                listOf(
-                    OpponentUiModel(name = "Opponent1", cardCount = 4, isCurrentTurn = true),
-                    OpponentUiModel(name = "Opponent2", cardCount = 6, isCurrentTurn = false)
-                )
-            )
+            ServerEvent.OpponentUpdate(opponentName = "Opponent1", cardCount = 4)
+        )
+        fakeWebSocketEngine.emitEvent(
+            ServerEvent.OpponentUpdate(opponentName = "Opponent2", cardCount = 6)
         )
         advanceUntilIdle()
 

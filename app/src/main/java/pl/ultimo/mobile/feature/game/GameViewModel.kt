@@ -105,9 +105,11 @@ class GameViewModel @Inject constructor(
             is ServerEvent.HandUpdate -> {
                 _uiState.update { state ->
                     val isResetUltimo = event.cards.size > 1
+                    val isFinished = event.cards.isEmpty() && state.hand.isNotEmpty()
                     state.copy(
                         hand = event.cards,
-                        isUltimoDeclared = if (isResetUltimo) false else state.isUltimoDeclared
+                        isUltimoDeclared = if (isResetUltimo) false else state.isUltimoDeclared,
+                        isSpectating = if (isFinished) true else state.isSpectating
                     )
                 }
             }
@@ -174,6 +176,24 @@ class GameViewModel @Inject constructor(
                     emitEffect(GameUiEffect.PlaySound(SoundType.ULTIMO_SHOUT))
                 }
                 val lowerMsg = event.message.lowercase()
+                if (lowerMsg.contains("auto-passed") || lowerMsg.contains("no valid moves") || lowerMsg.contains("auto-pass")) {
+                    _uiState.update { it.copy(autoPassNotice = event.message) }
+                }
+                if (lowerMsg.contains("deflect")) {
+                    emitEffect(GameUiEffect.PlaySound(SoundType.SHIELD_DEFLECT))
+                    emitEffect(GameUiEffect.TriggerHaptic(HapticType.MEDIUM_SNAP))
+                }
+                if (lowerMsg.contains("penalty stack") || lowerMsg.contains("stack accumulated")) {
+                    emitEffect(GameUiEffect.PlaySound(SoundType.STACK_ACCUMULATE))
+                    val match = Regex("""\+(\d+)""").find(event.message)
+                    if (match != null) {
+                        val count = match.groupValues[1].toIntOrNull() ?: 0
+                        _uiState.update { it.copy(pendingDrawPenalty = count) }
+                    }
+                }
+                if (lowerMsg.contains("pending skip deflection") || lowerMsg.contains("skip deflect")) {
+                    _uiState.update { it.copy(pendingSkipDeflection = true) }
+                }
                 if (lowerMsg.contains("disconnected")) {
                     _uiState.update { state ->
                         val updated = state.opponents.map { opp ->
@@ -232,7 +252,7 @@ class GameViewModel @Inject constructor(
                 val msg = "${event.penalizedPlayer} penalized ${event.penaltyCards} cards by ${event.challenger} for missing Ultimo!"
                 _uiState.update { it.copy(errorMessage = msg) }
                 emitEffect(GameUiEffect.PlaySound(SoundType.ERROR))
-                emitEffect(GameUiEffect.TriggerHaptic(HapticType.MEDIUM_SNAP))
+                emitEffect(GameUiEffect.TriggerHaptic(HapticType.HEAVY_WARNING))
             }
             is ServerEvent.ChallengeResult -> {
                 val outcome = if (event.isGuilty) "GUILTY" else "INNOCENT"
@@ -251,10 +271,32 @@ class GameViewModel @Inject constructor(
                 // Public rooms list handled in lobby
             }
             is ServerEvent.PlayerFinished -> {
-                // Handled in multi-player tournament standings
+                val isMe = event.playerName.equals(_uiState.value.localPlayerName, ignoreCase = true)
+                if (isMe) {
+                    _uiState.update { it.copy(isSpectating = true, myPlacementRank = event.placementRank) }
+                    emitEffect(GameUiEffect.PlaySound(SoundType.VICTORY))
+                } else {
+                    _uiState.update { state ->
+                        val updated = state.opponents.map { opp ->
+                            if (opp.name.equals(event.playerName, ignoreCase = true)) {
+                                opp.copy(cardCount = 0)
+                            } else opp
+                        }
+                        state.copy(opponents = updated)
+                    }
+                }
             }
             is ServerEvent.MatchStandings -> {
-                // Handled in multi-player tournament standings
+                turnTimerJob?.cancel()
+                _uiState.update { it.copy(podiumStandings = event.placements, isPodiumVisible = true) }
+                val myRank = event.placements.entries.firstOrNull {
+                    it.value.equals(_uiState.value.localPlayerName, ignoreCase = true)
+                }?.key
+                if (myRank == 1) {
+                    emitEffect(GameUiEffect.PlaySound(SoundType.VICTORY))
+                } else {
+                    emitEffect(GameUiEffect.PlaySound(SoundType.DEFEAT))
+                }
             }
         }
     }
@@ -323,6 +365,17 @@ class GameViewModel @Inject constructor(
                 viewModelScope.launch {
                     webSocketEngine.sendCommand(ClientCommand.TransferOwnership(intent.targetUsername))
                 }
+            }
+            is GameUiIntent.CatchUltimo -> {
+                viewModelScope.launch {
+                    webSocketEngine.sendCommand(ClientCommand.Chat("CATCH ${intent.targetUsername}"))
+                }
+            }
+            GameUiIntent.DismissAutoPass -> {
+                _uiState.update { it.copy(autoPassNotice = null) }
+            }
+            GameUiIntent.DismissPodium -> {
+                _uiState.update { it.copy(isPodiumVisible = false) }
             }
         }
     }

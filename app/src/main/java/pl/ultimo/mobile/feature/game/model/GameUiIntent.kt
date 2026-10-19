@@ -23,4 +23,9 @@ sealed interface GameUiIntent {
     data object StartMatch : GameUiIntent
     data class KickPlayer(val targetUsername: String) : GameUiIntent
     data class TransferHost(val targetUsername: String) : GameUiIntent
+
+    // Stage 11 & 12 Defense and Ultimo Controls
+    data class CatchUltimo(val targetUsername: String) : GameUiIntent
+    data object DismissAutoPass : GameUiIntent
+    data object DismissPodium : GameUiIntent
 }

@@ -72,18 +72,18 @@ data class ReconnectionPolicy(
     /**
      * Checks whether the current elapsed disconnection time is within the 120s grace period.
      */
-    fun isWithinGracePeriod(disconnectTimestampMs: Long): Boolean {
+    fun isWithinGracePeriod(disconnectTimestampMs: Long, currentTimeMs: Long = System.currentTimeMillis()): Boolean {
         if (disconnectTimestampMs <= 0L) return true
-        val elapsed = System.currentTimeMillis() - disconnectTimestampMs
+        val elapsed = currentTimeMs - disconnectTimestampMs
         return elapsed < gracePeriodMs
     }
 
     /**
      * Returns remaining grace period seconds (clamped at 0..120).
      */
-    fun remainingGracePeriodSeconds(disconnectTimestampMs: Long): Int {
+    fun remainingGracePeriodSeconds(disconnectTimestampMs: Long, currentTimeMs: Long = System.currentTimeMillis()): Int {
         if (disconnectTimestampMs <= 0L) return (gracePeriodMs / 1000).toInt()
-        val elapsed = System.currentTimeMillis() - disconnectTimestampMs
+        val elapsed = currentTimeMs - disconnectTimestampMs
         return ((gracePeriodMs - elapsed) / 1000).coerceAtLeast(0).toInt()
     }
 }
