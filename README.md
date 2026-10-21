@@ -230,3 +230,9 @@ The client features a built-in server switcher accessible directly from the Lobb
 ## License
 
 This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+
+---
+
+## Development
+
+Developed with the assistance of agentic AI workflows and LLMs.
